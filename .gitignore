@@ -1,0 +1,12 @@
+# Dev-only test harness. The game itself has no dependencies.
+node_modules/
+test-results/
+playwright-report/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.log

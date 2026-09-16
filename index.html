@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0d0d0f">
+<title>Tribrach — Leveling Simulator</title>
+<meta name="description" content="Level the bubble by turning the three tribrach screws. A TotalStationTech field-skills trainer.">
+<style>
+/* ==========================================================================
+   TRIBRACH LEVELING SIMULATOR — TotalStationTech
+   --------------------------------------------------------------------------
+   Single self-contained file. No build step, no bundler, no external fetches.
+   Deploy = drop this next to a netlify.toml with `publish = "."`.
+
+   Skin lives in the custom properties below. The body colour is ONE token
+   (--body-yellow / --body-yellow-*) precisely so the olive-drab variant the
+   original brief asked for is a three-line change, not a repaint.
+   ========================================================================== */
+:root{
+  /* --- skin ------------------------------------------------------------- */
+  --body-yellow:      #f5c218;
+  --body-yellow-lit:  #ffdc55;
+  --body-yellow-dim:  #a8820c;
+  --body-yellow-edge: #6e5406;
+
+  --ink:        #0d0d0f;
+  --panel:      #17171b;
+  --panel-lit:  #212128;
+  --hair:       #34343d;
+  --text:       #e9e9ee;
+  --text-dim:   #9a9aa6;
+  --yellow:     #f5c218;
+  --green:      #22d422;
+  --red:        #ff4b3e;
+
+  --mono: "Courier New", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--ink);
+  color:var(--text);
+  font-family:var(--mono);
+  /* The rig is a drag surface. Without this, dragging a knob scrolls the page
+     on every touch device. Learned the hard way on Stake-Out V11.1. */
+  overscroll-behavior:none;
+  -webkit-user-select:none;user-select:none;
+}
+body.is-playing{overflow:hidden;position:fixed;inset:0;width:100%}
+
+.screen{display:none;min-height:100%;padding:16px}
+.screen.is-on{display:flex;flex-direction:column;align-items:center}
+
+/* --- shared chrome ------------------------------------------------------ */
+.badge{
+  display:inline-block;background:var(--yellow);color:#000;font-weight:bold;
+  letter-spacing:.14em;font-size:12px;padding:5px 11px;border-radius:3px;
+}
+h1{font-size:clamp(26px,7vw,44px);letter-spacing:.06em;margin:14px 0 2px;text-align:center}
+h1 .thin{color:var(--text-dim);font-weight:normal}
+.sub{color:var(--text-dim);font-size:13px;letter-spacing:.1em;text-align:center;margin:0 0 22px}
+
+.btn{
+  font-family:var(--mono);font-weight:bold;letter-spacing:.1em;font-size:15px;
+  padding:14px 26px;border-radius:5px;border:2px solid var(--hair);
+  background:var(--panel-lit);color:var(--text);cursor:pointer;
+  min-height:48px;  /* thumb-sized on mobile, always */
+}
+.btn:hover{border-color:#50505c}
+.btn.primary{background:var(--yellow);color:#000;border-color:var(--body-yellow-dim)}
+.btn.primary:hover{background:var(--body-yellow-lit)}
+.btn.danger{border-color:#5e2a26;color:#ffb9b3}
+.btn:disabled{opacity:.38;cursor:not-allowed}
+
+/* --- menu --------------------------------------------------------------- */
+.card{
+  width:100%;max-width:520px;background:var(--panel);border:1px solid var(--hair);
+  border-radius:10px;padding:20px;margin-bottom:14px;
+}
+.card h2{font-size:13px;letter-spacing:.16em;color:var(--text-dim);margin:0 0 14px;font-weight:normal}
+.lvl{
+  display:block;width:100%;text-align:left;font-family:var(--mono);
+  background:var(--panel-lit);border:2px solid var(--hair);color:var(--text);
+  border-radius:6px;padding:13px 15px;margin-bottom:9px;cursor:pointer;min-height:48px;
+}
+.lvl:last-child{margin-bottom:0}
+.lvl[aria-checked="true"]{border-color:var(--yellow);background:#2a2412}
+.lvl .name{font-weight:bold;letter-spacing:.05em;font-size:15px}
+.lvl .meta{color:var(--text-dim);font-size:12px;margin-top:4px;letter-spacing:.05em}
+.lvl[aria-checked="true"] .meta{color:var(--body-yellow-lit)}
+
+.brief{font-size:13px;line-height:1.65;color:var(--text-dim);max-width:520px}
+.brief b{color:var(--text)}
+.brief code{background:var(--panel-lit);padding:1px 5px;border-radius:3px;color:var(--yellow)}
+
+/* --- play --------------------------------------------------------------- */
+#screen-play{padding:8px;justify-content:flex-start}
+.hud{
+  width:100%;max-width:560px;display:grid;
+  grid-template-columns:1fr auto;gap:6px 12px;align-items:center;
+  padding:8px 12px;background:var(--panel);border:1px solid var(--hair);
+  border-radius:8px;margin-bottom:8px;
+}
+.hud .lname{font-size:13px;font-weight:bold;letter-spacing:.06em}
+.hud .setup{font-size:12px;color:var(--text-dim);letter-spacing:.08em}
+.hud .clock{font-size:22px;font-weight:bold;letter-spacing:.06em;color:var(--yellow);text-align:right;line-height:1}
+.hud .clock.is-warn{color:var(--red)}
+.hud .tol{font-size:11px;color:var(--text-dim);text-align:right;letter-spacing:.06em}
+
+/* The rig. A square that takes whatever the viewport can spare. `touch-action:
+   none` is what actually makes drag-to-rotate work on a phone — without it the
+   browser claims the gesture for scrolling before pointermove ever fires. */
+#rig{
+  width:100%;max-width:min(560px, calc(100vh - 230px));
+  aspect-ratio:1/1;display:block;touch-action:none;cursor:grab;
+}
+#rig.is-turning{cursor:grabbing}
+
+.readout{
+  width:100%;max-width:560px;display:flex;gap:8px;margin-top:8px;
+}
+.readout .box{
+  flex:1;background:var(--panel);border:1px solid var(--hair);border-radius:8px;
+  padding:9px 6px;text-align:center;
+}
+.readout .k{font-size:10px;color:var(--text-dim);letter-spacing:.14em}
+.readout .v{font-size:19px;font-weight:bold;letter-spacing:.04em;margin-top:3px}
+.readout .box.ok .v{color:var(--green)}
+.readout .box.ok{border-color:#1d5c1d}
+
+.screws{width:100%;max-width:560px;display:flex;gap:8px;margin-top:8px}
+.screws .s{
+  flex:1;background:var(--panel);border:1px solid var(--hair);border-radius:8px;
+  padding:7px 4px;text-align:center;font-size:13px;letter-spacing:.06em;
+}
+.screws .s .id{color:var(--text-dim);font-size:10px;letter-spacing:.16em}
+.screws .s .t{font-weight:bold;margin-top:2px}
+.screws .s.live{border-color:var(--yellow);background:#2a2412}
+.screws .s.stop .t{color:var(--red)}
+
+.playbar{width:100%;max-width:560px;display:flex;gap:8px;margin-top:8px}
+.playbar .btn{flex:1;font-size:13px;padding:13px 10px}
+
+.toast{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));
+  background:var(--panel-lit);border:2px solid var(--hair);border-radius:7px;
+  padding:11px 20px;font-weight:bold;letter-spacing:.08em;font-size:14px;
+  opacity:0;pointer-events:none;transition:opacity .18s;z-index:50;white-space:nowrap;
+}
+.toast.is-on{opacity:1}
+.toast.ok{border-color:#1d5c1d;color:#9df09d}
+.toast.no{border-color:#5e2a26;color:#ffb9b3}
+
+/* --- field report ------------------------------------------------------- */
+.ticket{
+  width:100%;max-width:560px;background:#f4f1e8;color:#16160f;border-radius:6px;
+  padding:18px;font-size:13px;line-height:1.5;
+}
+.ticket .th{border-bottom:2px solid #16160f;padding-bottom:9px;margin-bottom:11px}
+.ticket .th .t{font-weight:bold;letter-spacing:.14em;font-size:15px}
+.ticket .th .s{font-size:11px;color:#55554a;letter-spacing:.06em;margin-top:3px}
+.ticket table{width:100%;border-collapse:collapse;font-size:12px}
+.ticket th{text-align:left;border-bottom:1px solid #a9a698;padding:5px 3px;font-size:10px;letter-spacing:.09em;color:#55554a}
+.ticket td{padding:6px 3px;border-bottom:1px dotted #bfbcae}
+.ticket td.p{font-weight:bold;color:#0a7a0a}
+.ticket td.f{font-weight:bold;color:#b02418}
+.ticket .tot{display:flex;justify-content:space-between;margin-top:13px;padding-top:9px;border-top:2px solid #16160f;font-weight:bold;letter-spacing:.07em}
+.rptbar{width:100%;max-width:560px;display:flex;gap:8px;margin-top:14px}
+.rptbar .btn{flex:1;font-size:13px}
+
+.foot{color:#55555f;font-size:11px;letter-spacing:.09em;margin-top:22px;text-align:center}
+</style>
+</head>
+<body>
+
+<!-- ======================= MENU ======================= -->
+<section id="screen-menu" class="screen is-on">
+  <span class="badge">TST&nbsp;&nbsp;FIELD TRAINER</span>
+  <h1>TRIBRACH<br><span class="thin">LEVELING SIM</span></h1>
+  <p class="sub">MEASURE · LAYOUT · BUILD · REPEAT</p>
+
+  <div class="card">
+    <h2>SELECT DIFFICULTY</h2>
+    <div id="lvlList" role="radiogroup" aria-label="Difficulty"></div>
+  </div>
+
+  <button id="startBtn" class="btn primary" style="width:100%;max-width:520px">START SETUP</button>
+
+  <div class="card" style="margin-top:14px">
+    <h2>HOW IT WORKS</h2>
+    <p class="brief" style="margin:0">
+      Drag any of the three knurled knobs to turn that leveling screw. The bubble
+      runs <b>toward</b> the screw you raise. Centre it inside the dashed ring and
+      <b>hold it there</b> until the ring closes — a bubble that only touches
+      centre on its way past hasn't been levelled.<br><br>
+      Field trick that actually works: turn <b>two knobs at once, in opposite
+      directions</b> — the bubble then moves on one axis only, so you can kill
+      one error at a time instead of chasing it in circles.
+    </p>
+  </div>
+  <p class="foot">TOTALSTATIONTECH.COM</p>
+</section>
+
+<!-- ======================= PLAY ======================= -->
+<section id="screen-play" class="screen">
+  <div class="hud">
+    <div>
+      <div class="lname" id="hudLevel">—</div>
+      <div class="setup" id="hudSetup">SETUP 1 OF 2</div>
+    </div>
+    <div>
+      <div class="clock" id="hudClock">00:00.0</div>
+      <div class="tol" id="hudTol">TOL 30%</div>
+    </div>
+  </div>
+
+  <canvas id="rig" width="1000" height="1000" role="application"
+          aria-label="Tribrach. Drag a leveling screw to turn it."></canvas>
+
+  <div class="readout">
+    <div class="box" id="boxOffset"><div class="k">OFFSET</div><div class="v" id="rdOffset">—</div></div>
+    <div class="box" id="boxHold"><div class="k">HOLD</div><div class="v" id="rdHold">0.0s</div></div>
+  </div>
+
+  <div class="screws" id="screws" aria-label="Screw positions, in turns"></div>
+
+  <div class="playbar">
+    <button id="logBtn" class="btn danger">LOG AS-IS</button>
+    <button id="quitBtn" class="btn">ABANDON</button>
+  </div>
+</section>
+
+<!-- ==================== FIELD REPORT ==================== -->
+<section id="screen-report" class="screen">
+  <span class="badge">FIELD REPORT</span>
+  <div class="ticket" id="ticket" style="margin-top:14px"></div>
+  <div class="rptbar">
+    <button id="againBtn" class="btn primary">RUN IT AGAIN</button>
+    <button id="menuBtn" class="btn">MENU</button>
+  </div>
+</section>
+
+<div class="toast" id="toast"></div>
+
+<script id="tribrach-sim">
+/* ==========================================================================
+   TribrachSim — the physics core.
+   --------------------------------------------------------------------------
+   Deliberately separated from anything that touches the DOM so it can be
+   driven headless by the acceptance tests. Namespaced rather than dumped on
+   the global scope because this is meant to sit alongside Stake-Out in a
+   surveying-games collection later, and two games sharing a `bubble` global
+   would be a bad afternoon.
+
+   COORDINATE CONVENTION — read this before debugging any sign error.
+   Everything in here is MATH convention: +x right, +y UP, angles measured
+   counter-clockwise from +x. That is what makes the screw angles below read
+   the way a surveyor would draw them on paper. The renderer is the only place
+   that flips to screen space (+y down), and it does it in exactly one line.
+   ========================================================================== */
+(function (root) {
+  'use strict';
+
+  /* ---- the three leveling screws --------------------------------------- */
+  /* 120 degrees apart. A upper-left, B upper-right, C bottom — matching both
+     the reference render and where the knobs actually get drawn. */
+  var PHI_DEG = { A: 150, B: 30, C: 270 };
+
+  var RAD = Math.PI / 180;
+
+  /* Each screw's fixed bubble-motion direction, d_i = [cos φ_i, sin φ_i].
+     Raising screw i tilts the plate down away from it, and a bubble floats to
+     the HIGH side — so the bubble moves TOWARD the screw you raise. That is
+     why d_i simply points at where the screw sits.
+
+        d_A = (-0.866,  0.5)
+        d_B = ( 0.866,  0.5)
+        d_C = ( 0.000, -1.0)
+
+     Note these three sum to (0,0). That is not a coincidence and it is not
+     decorative: it is acceptance criterion 3. Turning all three screws the
+     same amount raises the whole plate without tilting it, so the bubble does
+     not move at all. If you ever "fix" these numbers and that stops being
+     true, you have broken the game. */
+  var DIRS = [
+    { id: 'A', phi: PHI_DEG.A, x: Math.cos(PHI_DEG.A * RAD), y: Math.sin(PHI_DEG.A * RAD) },
+    { id: 'B', phi: PHI_DEG.B, x: Math.cos(PHI_DEG.B * RAD), y: Math.sin(PHI_DEG.B * RAD) },
+    { id: 'C', phi: PHI_DEG.C, x: Math.cos(PHI_DEG.C * RAD), y: Math.sin(PHI_DEG.C * RAD) }
+  ];
+
+  /* Handedness, one entry per screw, in A/B/C order. Positive q is a CLOCKWISE
+     turn of that knob as the player sees it. +1 means clockwise raises that
+     corner, which is the real-tribrach convention and the starting default.
+     If playtesting says the whole rig feels backwards, flip these three to -1
+     and change nothing else. If ONE knob feels backwards, flip that one. */
+  var KNOB_SENSE = [1, 1, 1];
+
+  /* Bubble travel per radian of knob rotation, in vial radii. Pure feel, dialed
+     in by hand exactly like Stake-Out's tilt sensitivity — there is no correct
+     value. At 0.16 a quarter turn walks the bubble about a quarter of the way
+     out, and a full turn takes it from dead centre to the rim. */
+  var K = 0.16;
+
+  /* Screws bottom out. Generous — 2.5 turns each way is far more than any
+     setup needs — but it stops a bored player from winding a knob to infinity
+     and it gives the renderer something honest to show at the stops. */
+  var MAX_TRAVEL_RAD = 2.5 * 2 * Math.PI;
+
+  /* ---- the vector maths the acceptance criteria are about ---------------- */
+  /* T = K * (q_A*d_A + q_B*d_B + q_C*d_C)
+     q_i is TOTAL accumulated rotation of knob i in radians, not a delta — the
+     bubble's target is a pure function of where the three screws currently
+     sit, the way a real plate's tilt is. */
+  function targetFor(qA, qB, qC) {
+    var q = [qA, qB, qC], tx = 0, ty = 0;
+    for (var i = 0; i < 3; i++) {
+      var s = q[i] * KNOB_SENSE[i];
+      tx += s * DIRS[i].x;
+      ty += s * DIRS[i].y;
+    }
+    return { x: K * tx, y: K * ty };
+  }
+
+  /* The inverse, for building a starting setup: given where we want the bubble
+     to sit, what screw positions put it there? Underdetermined — two equations,
+     three screws — so take the minimum-norm solution. The three unit vectors
+     form a tight frame with sum(d_i d_i^T) = (3/2)I, which collapses the whole
+     pseudo-inverse to this one line:  q_i = (2/3) * (T/K) . d_i  */
+  function screwsFor(tx, ty) {
+    var vx = tx / K, vy = ty / K;
+    var out = [];
+    for (var i = 0; i < 3; i++) {
+      out.push((2 / 3) * (vx * DIRS[i].x + vy * DIRS[i].y) / KNOB_SENSE[i]);
+    }
+    return out;
+  }
+
+  /* ---- difficulty tiers ------------------------------------------------- */
+  /* Tolerances and bubbleHump values are lifted verbatim from Stake-Out's
+     LEVELS table so the two games grade the same. `setups` replaces Stake-Out's
+     `points` (3/4/5/6) with 2/3/4/5 — levelling a tribrach takes longer than
+     taking a shot, so the same count would make Level 4 a slog.
+
+     dwellSec is the new idea and the whole win condition: the bubble has to
+     STAY inside tolerance that long, continuously. Judged on the rendered
+     position x, never on the target T, so overshoot costs you the hold. */
+  var LEVELS = [
+    { name: 'Level 1 — Rookie',            setups: 2, bubbleTolerancePct: 30, bubbleHump: 0.50, dwellSec: 1.5 },
+    { name: 'Level 2 — Journeyman',        setups: 3, bubbleTolerancePct: 18, bubbleHump: 0.75, dwellSec: 2.0 },
+    { name: 'Level 3 — Foreman',           setups: 4, bubbleTolerancePct: 9,  bubbleHump: 0.75, dwellSec: 2.5 },
+    { name: 'Level 4 — No Room For Error', setups: 5, bubbleTolerancePct: 3,  bubbleHump: 1.00, dwellSec: 3.0 }
+  ];
+
+  /* ---- spring / damper -------------------------------------------------- */
+  /* Ported from Stake-Out's game-engine.js, same constants, same personality
+     block. The only input that changed is where T comes from: three knobs
+     instead of a pole-tilt cursor.
+
+        a = k*(T - x) - c*v ;  v += a*dt ;  x += v*dt
+
+     ONE deliberate departure. Stake-Out's target was a moving mouse, so its
+     steady state was never actually steady and the per-frame jitter just added
+     texture. Here the target goes perfectly still the moment you let go of a
+     knob, which turns that same jitter into the only thing standing between
+     you and a pass — and at Level 4's 3% ring, holding for three seconds
+     against full jitter is not hard, it is a coin flip. So jitter fades out as
+     the bubble settles near centre (see JITTER_FLOOR). Off-centre it is as
+     lively as Stake-Out; parked dead centre it calms down like real fluid. */
+  var SPRING_K   = 6;
+  var DAMPING    = 0.75;
+  var MAX_VEL    = 4.8;
+  var JITTER     = 1.5;
+
+  /* Below this offset (in vial radii) jitter is scaled down to JITTER_FLOOR,
+     ramping linearly. 0.34 sits just outside Level 1's 30% ring, so every tier
+     gets its calm zone at the same physical place on the glass. */
+  var JITTER_CALM_AT = 0.34;
+  var JITTER_FLOOR   = 0.18;
+
+  var PERSONALITY      = 1.0;
+  var ESCAPE_MULT      = 2.2;
+  var RETURN_MULT      = 1.0;
+  var ESCAPE_DAMP_MULT = 0.75;
+  var RETURN_DAMP_MULT = 1.35;
+  var SENSITIVITY_GAIN = 1.8;
+  var SENSITIVITY_POW  = 1.5;
+
+  function clampMag(v, max) {
+    var m = Math.hypot(v.x, v.y);
+    if (m > max && m > 0) { v.x = v.x / m * max; v.y = v.y / m * max; }
+    return v;
+  }
+
+  function makeBubble(x, y) {
+    return { x: x || 0, y: y || 0, vx: 0, vy: 0 };
+  }
+
+  /* One integration step. `rand` is injectable so tests can run the real
+     integrator with jitter switched off and still exercise every other line. */
+  function step(bubble, target, dt, lvl, rand) {
+    var random = rand || Math.random;
+    var t = { x: target.x, y: target.y };
+    clampMag(t, 1);
+
+    var targetMag = Math.hypot(t.x, t.y);
+    var bubbleMag = Math.hypot(bubble.x, bubble.y);
+    var escaping = targetMag > bubbleMag;
+    var levelScale = 1 + lvl.bubbleHump * PERSONALITY;
+
+    var stiffnessMult = 1 + ((escaping ? ESCAPE_MULT : RETURN_MULT) - 1) * PERSONALITY * levelScale;
+    var dampMult      = 1 + ((escaping ? ESCAPE_DAMP_MULT : RETURN_DAMP_MULT) - 1) * PERSONALITY * levelScale;
+    var sensitivity   = Math.pow(targetMag, SENSITIVITY_POW) * SENSITIVITY_GAIN * PERSONALITY * levelScale;
+
+    var springK = SPRING_K * (1 + lvl.bubbleHump * 0.5) * stiffnessMult * (1 + sensitivity);
+    var damping = (DAMPING / (1 + lvl.bubbleHump)) * dampMult;
+
+    var ax = (t.x - bubble.x) * springK - bubble.vx * damping;
+    var ay = (t.y - bubble.y) * springK - bubble.vy * damping;
+
+    var calm = JITTER_FLOOR + (1 - JITTER_FLOOR) * Math.min(1, bubbleMag / JITTER_CALM_AT);
+    var jit = lvl.bubbleHump * JITTER * calm;
+    ax += (random() - 0.5) * jit;
+    ay += (random() - 0.5) * jit;
+
+    bubble.vx += ax * dt;
+    bubble.vy += ay * dt;
+    var vmag = Math.hypot(bubble.vx, bubble.vy);
+    if (vmag > MAX_VEL) { bubble.vx = bubble.vx / vmag * MAX_VEL; bubble.vy = bubble.vy / vmag * MAX_VEL; }
+    bubble.x += bubble.vx * dt;
+    bubble.y += bubble.vy * dt;
+    clampMag(bubble, 1);
+    return bubble;
+  }
+
+  function offsetPct(bubble) { return Math.hypot(bubble.x, bubble.y) * 100; }
+
+  root.TribrachSim = {
+    PHI_DEG: PHI_DEG, DIRS: DIRS, KNOB_SENSE: KNOB_SENSE, K: K,
+    MAX_TRAVEL_RAD: MAX_TRAVEL_RAD, LEVELS: LEVELS,
+    targetFor: targetFor, screwsFor: screwsFor,
+    makeBubble: makeBubble, step: step, offsetPct: offsetPct, clampMag: clampMag,
+    TUNING: {
+      SPRING_K: SPRING_K, DAMPING: DAMPING, MAX_VEL: MAX_VEL, JITTER: JITTER,
+      JITTER_CALM_AT: JITTER_CALM_AT, JITTER_FLOOR: JITTER_FLOOR
+    }
+  };
+})(typeof window !== 'undefined' ? window : this);
+</script>
+
+<script id="tribrach-app">
+/* ==========================================================================
+   Renderer + game shell.
+   --------------------------------------------------------------------------
+   The rig is drawn into a single canvas on a fixed 1000x1000 logical grid and
+   scaled to whatever box CSS gives it. That is the whole responsive strategy:
+   one coordinate space, one scale factor, no breakpoints, and the reference
+   render rebuilt in Canvas rather than sliced up into images that go soft on a
+   retina phone.
+   ========================================================================== */
+(function () {
+  'use strict';
+
+  var SIM = window.TribrachSim;
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ---- rig geometry, in logical units ----------------------------------- */
+  var BODY = { x: 500, y: 470 };
+  var VIAL = { x: 500, y: 430, r: 165 };
+  var KNOB_ORBIT = 345;
+  var KNOB_R = 76;
+  var HIT_R = 118;          // generous on purpose: the thumb target is much
+                            // bigger than the knob looks on a desktop screen
+
+  /* The plate is not a triangle. On a real tribrach — and in the reference
+     render — it is a hub with three arms that swell into a lobe around each
+     screw, with concave fillets between them. Drawing it as hub + arms + lobes
+     and letting them union gets that shape for free; a polygon cannot, which
+     is why the first pass had the knobs hanging off a flat edge. */
+  var HUB_R = 252;
+  var LOBE_R = 122;
+  var ARM_W = 196;
+
+  /* Screw angles are in maths convention (+y up); the canvas is +y down. This
+     single negation is the ONLY place the two conventions meet. */
+  function toScreen(vx, vy, cx, cy, scale) {
+    return { x: cx + vx * scale, y: cy - vy * scale };
+  }
+
+  var KNOBS = SIM.DIRS.map(function (d, i) {
+    var p = toScreen(d.x, d.y, BODY.x, BODY.y, KNOB_ORBIT);
+    return { id: d.id, i: i, x: p.x, y: p.y };
+  });
+
+  /* ---- state ------------------------------------------------------------ */
+  var levelIndex = 0;
+  var setupNum = 1;
+  var turns = [0, 0, 0];      // raw clockwise knob rotation, radians
+  var bubble = SIM.makeBubble(0, 0);
+  var holdSec = 0;
+  var rows = [];
+  var running = false;
+  var setupStartMs = 0;
+  var levelStartMs = 0;
+  var activeKnob = null;
+  var lastAngle = 0;
+  var paused = false;
+  var pausedAt = 0;
+  var armedLog = false;
+  var armedTimer = null;
+  var rafId = null;
+  var lastT = null;
+
+  var canvas = $('rig');
+  var ctx = canvas.getContext('2d');
+  var scale = 1;
+
+  var FINE_GEAR = 0.2;        // hold Shift while dragging for 5x finer control
+
+  /* ====================================================================== */
+  /* SCREENS                                                                */
+  /* ====================================================================== */
+  function show(name) {
+    ['menu', 'play', 'report'].forEach(function (s) {
+      $('screen-' + s).classList.toggle('is-on', s === name);
+    });
+    document.body.classList.toggle('is-playing', name === 'play');
+    if (name === 'play') { requestAnimationFrame(resize); }
+  }
+
+  /* ---- menu ------------------------------------------------------------- */
+  function buildMenu() {
+    var list = $('lvlList');
+    list.innerHTML = '';
+    SIM.LEVELS.forEach(function (lvl, i) {
+      var b = document.createElement('button');
+      b.className = 'lvl';
+      b.type = 'button';
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(i === levelIndex));
+      b.innerHTML =
+        '<div class="name">' + lvl.name + '</div>' +
+        '<div class="meta">' + lvl.setups + ' SETUPS &nbsp;·&nbsp; TOL ' +
+        lvl.bubbleTolerancePct + '% &nbsp;·&nbsp; HOLD ' + lvl.dwellSec + 's</div>';
+      b.addEventListener('click', function () {
+        levelIndex = i;
+        Array.prototype.forEach.call(list.children, function (c, j) {
+          c.setAttribute('aria-checked', String(j === i));
+        });
+      });
+      list.appendChild(b);
+    });
+  }
+
+  /* ====================================================================== */
+  /* ROUND FLOW                                                             */
+  /* ====================================================================== */
+  function startLevel() {
+    setupNum = 1;
+    rows = [];
+    levelStartMs = Date.now();
+    running = true;
+    show('play');
+    newSetup();
+    if (rafId === null) rafId = requestAnimationFrame(loop);
+  }
+
+  /* A fresh setup = the plate arrives already out of level, the way a tripod
+     does. Pick where the bubble should sit, solve back to screw positions, then
+     slide all three screws by a common amount. That common slide is the null
+     space of the whole system (criterion 3 again) so it changes nothing about
+     the bubble — it just stops every setup from looking symmetrical. */
+  function newSetup() {
+    var lvl = SIM.LEVELS[levelIndex];
+    var ang = Math.random() * Math.PI * 2;
+    var mag = 0.55 + Math.random() * 0.37;
+    var tx = Math.cos(ang) * mag, ty = Math.sin(ang) * mag;
+
+    var q = SIM.screwsFor(tx, ty);
+    var common = (Math.random() - 0.5) * 2.2;
+    turns = q.map(function (v) {
+      return Math.max(-SIM.MAX_TRAVEL_RAD, Math.min(SIM.MAX_TRAVEL_RAD, v + common));
+    });
+
+    var T = SIM.targetFor(turns[0], turns[1], turns[2]);
+    bubble = SIM.makeBubble(T.x, T.y);   // already settled where the tilt puts it
+    holdSec = 0;
+    setupStartMs = Date.now();
+    disarmLog();
+    $('hudLevel').textContent = lvl.name;
+    $('hudSetup').textContent = 'SETUP ' + setupNum + ' OF ' + lvl.setups;
+    $('hudTol').textContent = 'TOL ' + lvl.bubbleTolerancePct + '%  ·  HOLD ' + lvl.dwellSec + 's';
+  }
+
+  function finishSetup(pass, note) {
+    var lvl = SIM.LEVELS[levelIndex];
+    rows.push({
+      setup: setupNum,
+      sec: (nowMs() - setupStartMs) / 1000,
+      offset: SIM.offsetPct(bubble),
+      pass: pass,
+      note: note
+    });
+    toast(pass ? '✔ LEVEL — SETUP ACCEPTED' : '✘ ' + note, pass);
+    disarmLog();
+
+    if (setupNum >= lvl.setups) {
+      running = false;
+      setTimeout(endLevel, 750);
+    } else {
+      setupNum++;
+      running = false;
+      setTimeout(function () { running = true; newSetup(); }, 650);
+    }
+  }
+
+  function endLevel() {
+    running = false;
+    renderTicket();
+    show('report');
+  }
+
+  /* ====================================================================== */
+  /* INPUT — one pointer path for mouse, pen and touch. No touch-only branch */
+  /* exists, which is the entire reason this works on a phone.              */
+  /* ====================================================================== */
+  function pointOf(e) {
+    var rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;   // no layout box yet
+    return {
+      x: (e.clientX - rect.left) / rect.width * 1000,
+      y: (e.clientY - rect.top) / rect.height * 1000
+    };
+  }
+
+  function knobAt(p) {
+    var best = null, bestD = HIT_R;
+    for (var i = 0; i < KNOBS.length; i++) {
+      var d = Math.hypot(p.x - KNOBS[i].x, p.y - KNOBS[i].y);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    return best;
+  }
+
+  function onDown(e) {
+    if (!running) return;
+    var p = pointOf(e);
+    if (!p) return;
+    var k = knobAt(p);
+    if (k === null) return;
+    activeKnob = k;
+    lastAngle = Math.atan2(p.y - KNOBS[k].y, p.x - KNOBS[k].x);
+    canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+    canvas.classList.add('is-turning');
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    if (activeKnob === null || !running) return;
+    var p = pointOf(e);
+    if (!p) return;
+    var k = KNOBS[activeKnob];
+    var dx = p.x - k.x, dy = p.y - k.y;
+
+    /* Right at the spindle the angle is meaningless and jumps wildly. Re-seat
+       the reference instead of applying garbage. */
+    if (Math.hypot(dx, dy) < 22) return;
+
+    var a = Math.atan2(dy, dx);
+    var d = a - lastAngle;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    lastAngle = a;
+
+    if (e.shiftKey) d *= FINE_GEAR;   // desktop precision, free
+
+    var next = turns[activeKnob] + d;
+    turns[activeKnob] = Math.max(-SIM.MAX_TRAVEL_RAD, Math.min(SIM.MAX_TRAVEL_RAD, next));
+    e.preventDefault();
+  }
+
+  function onUp(e) {
+    if (activeKnob === null) return;
+    activeKnob = null;
+    canvas.classList.remove('is-turning');
+    canvas.releasePointerCapture && e.pointerId !== undefined &&
+      canvas.hasPointerCapture && canvas.hasPointerCapture(e.pointerId) &&
+      canvas.releasePointerCapture(e.pointerId);
+  }
+
+  canvas.addEventListener('pointerdown', onDown);
+  canvas.addEventListener('pointermove', onMove);
+  canvas.addEventListener('pointerup', onUp);
+  canvas.addEventListener('pointercancel', onUp);
+  canvas.addEventListener('lostpointercapture', onUp);
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  /* ====================================================================== */
+  /* SIMULATION LOOP                                                        */
+  /* ====================================================================== */
+  function update(dt) {
+    var lvl = SIM.LEVELS[levelIndex];
+    var T = SIM.targetFor(turns[0], turns[1], turns[2]);
+    SIM.step(bubble, T, dt, lvl);
+
+    /* Pass/fail is judged on the RENDERED position, never on the target. A
+       bubble that is merely aimed at centre has not been levelled; one that is
+       sitting at centre has. That gap is the lag and overshoot, and it is the
+       whole game. */
+    var off = SIM.offsetPct(bubble);
+    if (off <= lvl.bubbleTolerancePct) holdSec += dt; else holdSec = 0;
+    if (holdSec >= lvl.dwellSec) finishSetup(true, '');
+  }
+
+  function loop(t) {
+    if (lastT === null) lastT = t;
+    var dt = Math.min((t - lastT) / 1000, 0.05);
+    lastT = t;
+    if (running && !paused) update(dt);
+    draw();
+    paintHud();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  /* Pausing has to move the clock forward with it, or a player who takes a
+     phone call comes back to a stopwatch that says they spent four minutes on
+     one setup. Both the level clock and the per-setup clock get shifted by
+     however long we were away. */
+  /* While paused, "now" stops advancing. Without this the sim freezes but the
+     readout keeps counting up, and the clock only snaps back on resume — which
+     looks exactly like a bug to the player watching it. */
+  function nowMs() { return paused ? pausedAt : Date.now(); }
+
+  function setPaused(p) {
+    p = !!p;
+    if (p === paused) return;
+    paused = p;
+    if (paused) {
+      pausedAt = Date.now();
+    } else {
+      var gap = Date.now() - pausedAt;
+      levelStartMs += gap;
+      setupStartMs += gap;
+      lastT = null;               // don't hand the loop one enormous dt
+    }
+  }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) setPaused(true); else setPaused(false);
+  });
+  window.addEventListener('blur', function () { activeKnob = null; });
+
+  /* ====================================================================== */
+  /* HUD                                                                    */
+  /* ====================================================================== */
+  function fmtClock(sec) {
+    var m = Math.floor(sec / 60), s = sec - m * 60;
+    return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s.toFixed(1);
+  }
+
+  function paintHud() {
+    if (!$('screen-play').classList.contains('is-on')) return;
+    var lvl = SIM.LEVELS[levelIndex];
+    var el = (nowMs() - levelStartMs) / 1000;
+    var clock = $('hudClock');
+    clock.textContent = fmtClock(el);
+    clock.classList.toggle('is-warn', el > lvl.setups * 25);
+
+    var off = SIM.offsetPct(bubble);
+    var inTol = off <= lvl.bubbleTolerancePct;
+    $('rdOffset').textContent = off.toFixed(1) + '%';
+    $('boxOffset').classList.toggle('ok', inTol);
+    $('rdHold').textContent = holdSec.toFixed(1) + 's / ' + lvl.dwellSec + 's';
+    $('boxHold').classList.toggle('ok', holdSec > 0);
+    paintScrews();
+  }
+
+  var screwCells = null;
+  function buildScrews() {
+    var host = $('screws');
+    host.innerHTML = '';
+    screwCells = KNOBS.map(function (k) {
+      var d = document.createElement('div');
+      d.className = 's';
+      d.innerHTML = '<div class="id">SCREW ' + k.id + '</div><div class="t">+0.00</div>';
+      host.appendChild(d);
+      return d;
+    });
+  }
+
+  function paintScrews() {
+    if (!screwCells) return;
+    for (var i = 0; i < 3; i++) {
+      var t = turns[i] / (Math.PI * 2);
+      var atStop = Math.abs(turns[i]) >= SIM.MAX_TRAVEL_RAD - 1e-6;
+      screwCells[i].lastChild.textContent =
+        (t >= 0 ? '+' : '\u2212') + Math.abs(t).toFixed(2) + (atStop ? ' STOP' : '');
+      screwCells[i].classList.toggle('live', activeKnob === i);
+      screwCells[i].classList.toggle('stop', atStop);
+    }
+  }
+
+  var toastTimer = null;
+  function toast(msg, good) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast is-on ' + (good ? 'ok' : 'no');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.className = 'toast'; }, 1500);
+  }
+
+  /* ====================================================================== */
+  /* RENDER                                                                 */
+  /* ====================================================================== */
+  /* The plate never changes — not its shape, its shading, its bolts or its
+     engraving. Redrawing it every frame meant re-running a 20px blur over a
+     full-size path sixty times a second, which is exactly the sort of thing
+     that turns a phone into a hand warmer. Render it once per resize into an
+     offscreen canvas and blit it instead; only the vial, the bubble and the
+     knobs actually move. */
+  var bodyLayer = null;
+
+  function bodyLayerFor() {
+    if (bodyLayer && bodyLayer.width === canvas.width) return bodyLayer;
+    var off = document.createElement('canvas');
+    off.width = canvas.width;
+    off.height = canvas.height;
+    var octx = off.getContext('2d');
+    octx.setTransform(scale, 0, 0, scale, 0, 0);
+    octx.textBaseline = 'alphabetic';
+    drawBody(octx);
+    bodyLayer = off;
+    return off;
+  }
+
+  function resize() {
+    var rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    var w = Math.round(rect.width * dpr);
+    if (canvas.width === w) return;
+    canvas.width = w;
+    canvas.height = w;
+    scale = w / 1000;
+    bodyLayer = null;        // cached body is now the wrong resolution
+  }
+  window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', function () { setTimeout(resize, 80); });
+
+  /* Paints the plate silhouette with one style. `grow` fattens every piece by
+     the same amount, which is how the dark outline is done: paint it once
+     oversized in the edge colour, then once at true size in the gradient. No
+     path arithmetic, no union algorithm, and the seams never show because a
+     canvas gradient is defined in user space — every piece samples the same
+     one. */
+  function paintBody(c, style, grow) {
+    c.save();
+    c.fillStyle = style;
+    c.strokeStyle = style;
+    c.lineJoin = 'round';
+    c.lineCap = 'round';
+
+    // arms, as fat round-capped strokes from the hub out to each screw
+    c.lineWidth = ARM_W + grow * 2;
+    KNOBS.forEach(function (k) {
+      c.beginPath();
+      c.moveTo(BODY.x, BODY.y);
+      c.lineTo(k.x, k.y);
+      c.stroke();
+    });
+
+    // hub
+    c.beginPath();
+    c.arc(BODY.x, BODY.y, HUB_R + grow, 0, Math.PI * 2);
+    c.fill();
+
+    // lobe around each screw
+    KNOBS.forEach(function (k) {
+      c.beginPath();
+      c.arc(k.x, k.y, LOBE_R + grow, 0, Math.PI * 2);
+      c.fill();
+    });
+    c.restore();
+  }
+
+  function drawBody(c) {
+    // cast shadow
+    c.save();
+    c.globalAlpha = 0.5;
+    c.filter = 'blur(20px)';
+    c.translate(0, 24);
+    paintBody(c, '#000', 6);
+    c.restore();
+
+    // black understructure peeking out under each lobe (the clamp feet)
+    c.save();
+    c.fillStyle = '#131316';
+    KNOBS.forEach(function (k) {
+      c.beginPath();
+      c.ellipse(k.x, k.y + 58, LOBE_R * 0.74, 46, 0, 0, Math.PI * 2);
+      c.fill();
+    });
+    c.restore();
+
+    // dark edge, then the plate itself
+    paintBody(c, '#6e5406', 5);
+
+    var g = c.createLinearGradient(0, 140, 0, 960);
+    g.addColorStop(0,    '#ffdc55');
+    g.addColorStop(0.40, '#f5c218');
+    g.addColorStop(0.76, '#d19f0e');
+    g.addColorStop(1,    '#a8820c');
+    paintBody(c, g, 0);
+
+    // inner bevel: a faint light line tracking just inside the silhouette
+    c.save();
+    c.globalAlpha = 0.20;
+    c.globalCompositeOperation = 'source-atop';
+    c.lineWidth = 4;
+    c.strokeStyle = '#ffffff';
+    c.lineJoin = 'round'; c.lineCap = 'round';
+    c.lineWidth = 4;
+    c.beginPath(); c.arc(BODY.x, BODY.y, HUB_R - 13, 0, Math.PI * 2); c.stroke();
+    KNOBS.forEach(function (k) {
+      c.beginPath(); c.arc(k.x, k.y, LOBE_R - 13, 0, Math.PI * 2); c.stroke();
+    });
+    c.restore();
+
+    // decorative silver hex bolts — non-functional, straight off the reference
+    KNOBS.forEach(function (k) {
+      // two per lobe, flanking the screw
+      var a = Math.atan2(k.y - BODY.y, k.x - BODY.x);
+      [-1, 1].forEach(function (sgn) {
+        var t = a + sgn * 1.55;
+        drawBolt(c, k.x + Math.cos(t) * (LOBE_R - 26), k.y + Math.sin(t) * (LOBE_R - 26), 15);
+      });
+    });
+
+    // engraved brand text, low on the hub either side of the badge
+    c.save();
+    c.fillStyle = 'rgba(0,0,0,0.55)';
+    c.font = 'bold 18px "Courier New", monospace';
+    c.textAlign = 'center';
+    /* The lower shoulders of the hub are the only genuinely clear real estate:
+       below the vial bezel, inside the hub rim, and outboard of the arm down to
+       screw C. Everything above here is either glass or arm. */
+    ['TOTAL', 'STATION', 'TECH'].forEach(function (t, i) { c.fillText(t, 336, 600 + i * 20); });
+    ['MEASURE', 'LAYOUT', 'BUILD'].forEach(function (t, i) { c.fillText(t, 664, 600 + i * 20); });
+    c.restore();
+
+    // TST hex badge + moulded arrows, bottom centre — decorative
+    drawBadge(c, 500, 655, 27);
+    c.save();
+    c.fillStyle = 'rgba(0,0,0,0.42)';
+    [-1, 1].forEach(function (sgn) {
+      c.save();
+      c.translate(500 + sgn * 74, 655);
+      c.scale(sgn, 1);
+      c.beginPath();
+      c.moveTo(-11, -16); c.lineTo(4, -16); c.lineTo(13, 0);
+      c.lineTo(4, 16); c.lineTo(-11, 16); c.lineTo(-2, 0);
+      c.closePath(); c.fill();
+      c.restore();
+    });
+    c.restore();
+  }
+
+  function drawBolt(c, x, y, r) {
+    var g = c.createRadialGradient(x - r * 0.4, y - r * 0.4, r * 0.1, x, y, r);
+    g.addColorStop(0, '#b9bcc2'); g.addColorStop(0.6, '#6f747c'); g.addColorStop(1, '#3a3e45');
+    c.fillStyle = g;
+    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 2; c.stroke();
+    // hex socket
+    c.fillStyle = '#1b1d21';
+    c.beginPath();
+    for (var i = 0; i < 6; i++) {
+      var a = i * Math.PI / 3 + 0.35;
+      var px = x + Math.cos(a) * r * 0.46, py = y + Math.sin(a) * r * 0.46;
+      if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+    }
+    c.closePath(); c.fill();
+  }
+
+  function drawBadge(c, x, y, r) {
+    c.save();
+    c.beginPath();
+    for (var i = 0; i < 6; i++) {
+      var a = i * Math.PI / 3 - Math.PI / 2;
+      var px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+      if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+    }
+    c.closePath();
+    c.fillStyle = '#17171b'; c.fill();
+    c.strokeStyle = 'rgba(0,0,0,0.6)'; c.lineWidth = 3; c.stroke();
+    c.fillStyle = '#f5c218';
+    c.font = 'bold 22px "Courier New", monospace';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText('TST', x, y + 1);
+    c.restore();
+  }
+
+  /* ---- the vial --------------------------------------------------------- */
+  /* Visual language deliberately matched to Stake-Out's bubble gauge: machined
+     bezel, silver retaining ring, green glass, white crosshair, dashed yellow
+     tolerance ring, yellow cardinal index bars. Same instrument, new rig. */
+  function drawVial(c) {
+    var lvl = SIM.LEVELS[levelIndex];
+    var cx = VIAL.x, cy = VIAL.y, r = VIAL.r;
+    var inTol = SIM.offsetPct(bubble) <= lvl.bubbleTolerancePct;
+
+    // machined bezel
+    var bez = c.createLinearGradient(cx, cy - r - 24, cx, cy + r + 24);
+    bez.addColorStop(0, '#54545c'); bez.addColorStop(0.5, '#17171a'); bez.addColorStop(1, '#43434a');
+    c.fillStyle = bez;
+    c.beginPath(); c.arc(cx, cy, r + 24, 0, Math.PI * 2); c.fill();
+
+    // hold-progress ring: sweeps closed while the bubble stays inside tolerance
+    if (holdSec > 0) {
+      c.save();
+      c.strokeStyle = '#22d422';
+      c.lineWidth = 9;
+      c.lineCap = 'round';
+      c.beginPath();
+      c.arc(cx, cy, r + 19, -Math.PI / 2,
+            -Math.PI / 2 + Math.PI * 2 * Math.min(1, holdSec / lvl.dwellSec));
+      c.stroke();
+      c.restore();
+    }
+
+    // silver retaining ring
+    c.strokeStyle = '#d0d0d4'; c.lineWidth = 8;
+    c.beginPath(); c.arc(cx, cy, r + 9, 0, Math.PI * 2); c.stroke();
+
+    // the glass
+    var vial = c.createRadialGradient(cx, cy - r * 0.2, r * 0.05, cx, cy, r);
+    vial.addColorStop(0, '#54c43a'); vial.addColorStop(0.55, '#3fbf22');
+    vial.addColorStop(0.86, '#2fd42f'); vial.addColorStop(1, '#0d6b0d');
+    c.fillStyle = vial;
+    c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fill();
+
+    // etched crosshair + the two concentric rings
+    c.strokeStyle = 'rgba(0,0,0,0.78)'; c.lineWidth = 3;
+    c.beginPath();
+    c.moveTo(cx - r * 0.96, cy); c.lineTo(cx + r * 0.96, cy);
+    c.moveTo(cx, cy - r * 0.96); c.lineTo(cx, cy + r * 0.96);
+    c.stroke();
+    [0.62, 0.36].forEach(function (f) {
+      c.beginPath(); c.arc(cx, cy, r * f, 0, Math.PI * 2); c.stroke();
+    });
+    // small bullseye at dead centre
+    c.beginPath(); c.arc(cx, cy, r * 0.13, 0, Math.PI * 2); c.stroke();
+
+    // dashed ring = THIS level's pass tolerance
+    c.save();
+    c.setLineDash([9, 9]);
+    c.strokeStyle = inTol ? '#ffffff' : '#f5c218';
+    c.lineWidth = 3;
+    c.beginPath(); c.arc(cx, cy, r * (lvl.bubbleTolerancePct / 100), 0, Math.PI * 2); c.stroke();
+    c.restore();
+
+    // yellow index bars at the cardinals
+    c.fillStyle = '#f5c218';
+    var bw = 14, bl = 30;
+    c.fillRect(cx - bw / 2, cy - r - bl / 2, bw, bl);
+    c.fillRect(cx - bw / 2, cy + r - bl / 2, bw, bl);
+    c.fillRect(cx - r - bl / 2, cy - bw / 2, bl, bw);
+    c.fillRect(cx + r - bl / 2, cy - bw / 2, bl, bw);
+
+    // THE BUBBLE. Physics is +y up, canvas is +y down — hence the minus.
+    var bx = cx + bubble.x * r;
+    var by = cy - bubble.y * r;
+    var br = r * 0.23;
+    var bg = c.createRadialGradient(bx - br * 0.3, by - br * 0.35, br * 0.05, bx, by, br);
+    bg.addColorStop(0, '#f2ffe0'); bg.addColorStop(0.38, '#a8f56a'); bg.addColorStop(1, '#3fc41a');
+    c.fillStyle = bg;
+    c.beginPath(); c.arc(bx, by, br, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = 'rgba(255,255,255,0.6)'; c.lineWidth = 3; c.stroke();
+    c.fillStyle = 'rgba(255,255,255,0.9)';
+    c.beginPath(); c.ellipse(bx - br * 0.3, by - br * 0.38, br * 0.26, br * 0.17, -0.6, 0, Math.PI * 2); c.fill();
+
+    // glass sheen
+    c.save();
+    c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.clip();
+    var sheen = c.createLinearGradient(cx, cy - r, cx, cy + r * 0.2);
+    sheen.addColorStop(0, 'rgba(255,255,255,0.30)'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = sheen; c.fillRect(cx - r, cy - r, r * 2, r * 1.2);
+    c.restore();
+  }
+
+  /* ---- the knobs -------------------------------------------------------- */
+  function drawKnob(c, k) {
+    var rot = turns[k.i];                  // raw clockwise drag = what you see
+    var live = (activeKnob === k.i);
+    var atStop = Math.abs(rot) >= SIM.MAX_TRAVEL_RAD - 1e-6;
+    var x = k.x, y = k.y, R = KNOB_R;
+
+    c.save();
+
+    // spindle + shadow under the knob
+    c.fillStyle = 'rgba(0,0,0,0.45)';
+    c.beginPath(); c.ellipse(x, y + R * 0.72, R * 0.95, R * 0.34, 0, 0, Math.PI * 2); c.fill();
+
+    // silver collar the knob rides on
+    var col = c.createLinearGradient(x - R, y, x + R, y);
+    col.addColorStop(0, '#4d5158'); col.addColorStop(0.35, '#b6bac1');
+    col.addColorStop(0.65, '#8d9199'); col.addColorStop(1, '#40444a');
+    c.fillStyle = col;
+    c.beginPath(); c.ellipse(x, y + R * 0.46, R * 0.74, R * 0.30, 0, 0, Math.PI * 2); c.fill();
+
+    // knurled barrel
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot);                          // canvas rotate is clockwise = +q
+    var TEETH = 44;
+    for (var i = 0; i < TEETH; i++) {
+      var a0 = (i / TEETH) * Math.PI * 2;
+      var a1 = ((i + 0.5) / TEETH) * Math.PI * 2;
+      c.beginPath();
+      c.moveTo(0, 0);
+      c.arc(0, 0, R, a0, a1);
+      c.closePath();
+      c.fillStyle = (i % 2) ? '#3c3c42' : '#232327';
+      c.fill();
+    }
+    c.restore();
+
+    // barrel shading over the knurl so it reads as a cylinder, not a pinwheel
+    c.save();
+    c.beginPath(); c.arc(x, y, R, 0, Math.PI * 2); c.clip();
+    var shade = c.createLinearGradient(x - R, y - R, x + R, y + R);
+    shade.addColorStop(0, 'rgba(255,255,255,0.30)');
+    shade.addColorStop(0.42, 'rgba(255,255,255,0.02)');
+    shade.addColorStop(1, 'rgba(0,0,0,0.55)');
+    c.fillStyle = shade; c.fillRect(x - R, y - R, R * 2, R * 2);
+    c.restore();
+
+    // rim
+    c.strokeStyle = live ? '#f5c218' : '#101013';
+    c.lineWidth = live ? 6 : 4;
+    c.beginPath(); c.arc(x, y, R, 0, Math.PI * 2); c.stroke();
+
+    // top cap
+    var capR = R * 0.60;
+    var cap = c.createRadialGradient(x - capR * 0.35, y - capR * 0.4, capR * 0.05, x, y, capR);
+    cap.addColorStop(0, '#6a6a72'); cap.addColorStop(0.55, '#3a3a41'); cap.addColorStop(1, '#1c1c20');
+    c.fillStyle = cap;
+    c.beginPath(); c.arc(x, y, capR, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = atStop ? '#ff4b3e' : '#f5c218';
+    c.lineWidth = 4;
+    c.beginPath(); c.arc(x, y, capR * 0.92, 0, Math.PI * 2); c.stroke();
+
+    // index mark — the only way to see how far you have turned it
+    c.save();
+    c.translate(x, y);
+    c.rotate(rot);
+    c.fillStyle = atStop ? '#ff4b3e' : '#f5c218';
+    c.fillRect(-4, -R * 0.95, 8, R * 0.42);
+    c.restore();
+
+    c.restore();
+
+    /* The screw letter is engraved on the lobe, pushed OUTWARD from the hub so
+       it never lands on the arm, the vial or a bolt. The turn counter used to
+       sit here too and was unreadable dark-on-yellow behind the knob shadow —
+       it lives in the HUD now, where it can be read at a glance. */
+    var out = Math.atan2(y - BODY.y, x - BODY.x);
+    c.save();
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillStyle = live ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0.6)';
+    c.font = 'bold 32px "Courier New", monospace';
+    c.fillText(k.id, x + Math.cos(out) * (R + 32), y + Math.sin(out) * (R + 32));
+    c.restore();
+  }
+
+  function draw() {
+    resize();
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.clearRect(0, 0, 1000, 1000);
+    ctx.textBaseline = 'alphabetic';
+    ctx.drawImage(bodyLayerFor(), 0, 0, 1000, 1000);
+    drawVial(ctx);
+    KNOBS.forEach(function (k) { drawKnob(ctx, k); });
+  }
+
+  /* ====================================================================== */
+  /* FIELD REPORT                                                           */
+  /* ====================================================================== */
+  function renderTicket() {
+    var lvl = SIM.LEVELS[levelIndex];
+    var passed = rows.filter(function (r) { return r.pass; }).length;
+    var total = (nowMs() - levelStartMs) / 1000;
+    var now = new Date();
+
+    var body = rows.map(function (r) {
+      return '<tr>' +
+        '<td>' + String(r.setup).padStart(3, '0') + '</td>' +
+        '<td>' + r.sec.toFixed(1) + 's</td>' +
+        '<td>' + r.offset.toFixed(1) + '%</td>' +
+        '<td class="' + (r.pass ? 'p' : 'f') + '">' +
+          (r.pass ? 'LEVEL' : (r.note || 'OUT')) + '</td>' +
+      '</tr>';
+    }).join('');
+
+    $('ticket').innerHTML =
+      '<div class="th">' +
+        '<div class="t">TRIBRACH LEVELLING RECORD</div>' +
+        '<div class="s">' + lvl.name.toUpperCase() +
+          ' &nbsp;·&nbsp; TOL ' + lvl.bubbleTolerancePct + '%' +
+          ' &nbsp;·&nbsp; HOLD ' + lvl.dwellSec + 's' +
+          ' &nbsp;·&nbsp; ' + now.toLocaleString() + '</div>' +
+      '</div>' +
+      '<table><thead><tr><th>SETUP</th><th>TIME</th><th>FINAL OFFSET</th><th>RESULT</th></tr></thead>' +
+      '<tbody>' + body + '</tbody></table>' +
+      '<div class="tot"><span>' + passed + ' / ' + rows.length + ' ACCEPTED</span>' +
+      '<span>TOTAL ' + fmtClock(total) + '</span></div>';
+  }
+
+  /* ====================================================================== */
+  /* BUTTONS                                                                */
+  /* ====================================================================== */
+  function disarmLog() {
+    armedLog = false;
+    clearTimeout(armedTimer);
+    $('logBtn').textContent = 'LOG AS-IS';
+    $('logBtn').classList.add('danger');
+  }
+
+  /* Two-press, because one stray thumb should not throw away a setup you have
+     been fighting for forty seconds. Logging as-is is always a fail: the hold
+     is the only way to pass, or the dwell mechanic means nothing. */
+  $('logBtn').addEventListener('click', function () {
+    if (!running) return;
+    if (!armedLog) {
+      armedLog = true;
+      $('logBtn').textContent = 'CONFIRM — LOG UNLEVEL';
+      armedTimer = setTimeout(disarmLog, 3000);
+      return;
+    }
+    finishSetup(false, 'LOGGED UNLEVEL');
+  });
+
+  $('quitBtn').addEventListener('click', function () {
+    running = false;
+    disarmLog();
+    if (rows.length) { renderTicket(); show('report'); } else { show('menu'); }
+  });
+
+  $('startBtn').addEventListener('click', startLevel);
+  $('againBtn').addEventListener('click', startLevel);
+  $('menuBtn').addEventListener('click', function () { show('menu'); });
+
+  /* ====================================================================== */
+  /* BOOT                                                                   */
+  /* ====================================================================== */
+  buildMenu();
+  buildScrews();
+  show('menu');
+
+  /* A read-only window into live state, for console poking and for the
+     Playwright acceptance tests. Setters are deliberately limited to the three
+     things a test needs to drive: which level, where the knobs are, and a
+     single deterministic step. */
+  window.TribrachGame = {
+    get level() { return levelIndex; },
+    get turns() { return turns.slice(); },
+    get bubble() { return { x: bubble.x, y: bubble.y }; },
+    get offsetPct() { return SIM.offsetPct(bubble); },
+    get holdSec() { return holdSec; },
+    get rows() { return rows.slice(); },
+    get running() { return running; },
+    get paused() { return paused; },
+    setPaused: setPaused,
+    setLevel: function (i) { levelIndex = i; },
+    setTurns: function (a, b, cc) { turns = [a, b, cc]; },
+    resetBubble: function (x, y) { bubble = SIM.makeBubble(x || 0, y || 0); holdSec = 0; },
+    stepN: function (n, dt, noJitter) {
+      var lvl = SIM.LEVELS[levelIndex];
+      var T = SIM.targetFor(turns[0], turns[1], turns[2]);
+      var rnd = noJitter ? function () { return 0.5; } : null;
+      for (var i = 0; i < n; i++) SIM.step(bubble, T, dt || 1 / 60, lvl, rnd);
+      return { x: bubble.x, y: bubble.y };
+    },
+    knobPositions: function () { return KNOBS.map(function (k) { return { id: k.id, x: k.x, y: k.y }; }); },
+    startLevel: startLevel
+  };
+})();
+</script>
+</body>
+</html>

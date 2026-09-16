@@ -1,0 +1,11 @@
+{
+  "name": "tribrach-sim-tests",
+  "private": true,
+  "description": "Dev-only test harness. The game itself is a single static index.html with no build step and no runtime dependencies — nothing in here ships.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}
