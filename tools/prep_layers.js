@@ -60,14 +60,33 @@ const WEBP_Q = 0.92;
              keeping are the two % signs, because the Stake-Out digit atlas we
              match against has 0-9 and a decimal point and nothing else. */
 const SPLIT = {
+  /* v3 knob art: drawn straight down the axis, so each knob is a TRUE CIRCLE —
+     measured aspect 1.000, and its alpha fills the circumscribed circle to
+     within 0.2%. That is worth stating plainly because it is what lets
+     index.html spin the whole sprite about the middle of its own bitmap and be
+     geometrically right, with no correction of any kind.
+
+     The two earlier passes were not circles. They were three-quarter views, so
+     the cap was an ellipse and the knurl was the side wall of a cylinder, and
+     no rotation of a flat bitmap moves either of those correctly. See the
+     README for what that cost.
+
+     Each crop is the knob's own bounding box plus 2px, so the centre of the
+     crop is the axis and the anti-aliased rim is not clipped. */
   tribrach_04_knobs: [
-    { name: 'knob_a', x: 490, y: 243, w: 170, h: 186 },
-    { name: 'knob_b', x: 1268, y: 242, w: 173, h: 187 },
-    { name: 'knob_c', x: 842, y: 729, w: 235, h: 237 },
+    { name: 'knob_a', x: 488, y: 249, w: 174, h: 174 },
+    { name: 'knob_b', x: 1266, y: 247, w: 177, h: 177 },
+    { name: 'knob_c', x: 840, y: 728, w: 239, h: 239 },
   ],
   tribrach_06_lcd_readouts: [
     { name: 'pct_offset', x: 373, y: 339, w: 53, h: 55 },
     { name: 'pct_hold', x: 279, y: 647, w: 45, h: 47 },
+    /* Both clock colons are the same glyph, so one crop gets drawn twice. It
+       has to be a crop and not two filled squares: the dots are 11x10, rounded,
+       and the pair leans to the right like the rest of the LCD face. Squares
+       drawn to the bounding box came out chunky, upright and a shade too high,
+       which is exactly how a colon announces that it was not part of the art. */
+    { name: 'colon', x: 229, y: 198, w: 18, h: 34 },
   ],
 };
 
@@ -98,6 +117,32 @@ const SKIP = ['tribrach_07_hold_fill'];
 const REPAIRS = {
   tribrach_01_static_ui: { kind: 'ring', cx: 271, cy: 654, rIn: 92, rOut: 148, fromDeg: -10, toDeg: 84 },
   tribrach_03_level_glass: { kind: 'mirror', axisX: 961, cx: 1080, cy: 320, rx: 125, ry: 115, solid: 0.62 },
+
+  /* title  The wordmark layer kept a bite of the construction photo above
+            "…ach" (buildings and the sun), and a scrap of the hero's rotation
+            arrows under the "T". Both are invisible in the landscape menu,
+            because there they sit exactly on top of the identical pixels in
+            the background layer — but the portrait menu moves the wordmark
+            away from the photo and they come along as floating debris.
+
+            Rectangles, not a colour key: the sun is the same yellow as the
+            wordmark, so nothing can tell them apart by pixel. The two top
+            rectangles deliberately stop either side of the 'h' ascender
+            (x 1688-1748) rather than risk clipping it. */
+  startmenu_03_title_branding: {
+    kind: 'erase',
+    rects: [
+      { x: 1485, y: 76,  w: 203, h: 82 },   // buildings, left of the h stem
+      { x: 1748, y: 76,  w: 77,  h: 82 },   // sun and buildings, right of it
+      /* The strip directly over the h stem. Here the bleed runs straight into
+         the letter with no transparent gap between them, so the cut is placed
+         by scanning the columns: the block ends by y 150 and the ascender
+         picks up at 151-153. The reticle arc that belongs in this layer sits
+         further left (around x 1395) and is not touched. */
+      { x: 1688, y: 76,  w: 60,  h: 74 },
+      { x: 960,  y: 262, w: 240, h: 64 },   // rotation-arrow scrap, bottom left
+    ],
+  },
 };
 
 async function main() {
@@ -312,6 +357,9 @@ function repair(page, b64, spec) {
       mx.restore();
 
       x.drawImage(m, 0, 0);
+
+    } else if (s.kind === 'erase') {
+      s.rects.forEach(function (r) { x.clearRect(r.x, r.y, r.w, r.h); });
     }
 
     return c.toDataURL('image/png').split(',')[1];

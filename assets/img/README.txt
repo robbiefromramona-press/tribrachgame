@@ -12,15 +12,16 @@ Drop them back into _design-assets/tribrach-v2/{hud,startmenu}/ to re-run.
 [hud]
   tribrach_01_static_ui              repaired (ring)
   tribrach_01_static_ui              x=   0 y=   0 w=1920 h=1080    1498KB ->   131KB webp /  2181KB png
-  tribrach_02_static_body            x= 475 y=  45 w= 970 h= 982    2321KB ->   103KB webp /   739KB png
+  tribrach_02_static_body            x= 475 y=  45 w= 970 h= 982    2324KB ->   110KB webp /   752KB png
   tribrach_03_level_glass            repaired (mirror)
   tribrach_03_level_glass            x= 733 y= 207 w= 457 h= 421    2681KB ->    36KB webp /   300KB png
-  knob_a                             x= 490 y= 243 w= 170 h= 186   cut from tribrach_04_knobs      12KB webp /    61KB png
-  knob_b                             x=1268 y= 242 w= 173 h= 187   cut from tribrach_04_knobs      12KB webp /    62KB png
-  knob_c                             x= 842 y= 729 w= 235 h= 237   cut from tribrach_04_knobs      18KB webp /   101KB png
-  tribrach_05_bubble                 x=1008 y= 277 w= 132 h= 132    2700KB ->     8KB webp /    35KB png
+  knob_a                             x= 488 y= 249 w= 174 h= 174   cut from tribrach_04_knobs      11KB webp /    58KB png
+  knob_b                             x=1266 y= 247 w= 177 h= 177   cut from tribrach_04_knobs      12KB webp /    60KB png
+  knob_c                             x= 840 y= 728 w= 239 h= 239   cut from tribrach_04_knobs      17KB webp /   104KB png
+  tribrach_05_bubble                 x=1011 y= 280 w= 124 h= 124      34KB ->     5KB webp /    27KB png
   pct_offset                         x= 373 y= 339 w=  53 h=  55   cut from tribrach_06_lcd_readouts       4KB webp /     8KB png
   pct_hold                           x= 279 y= 647 w=  45 h=  47   cut from tribrach_06_lcd_readouts       3KB webp /     6KB png
+  colon                              x= 229 y= 198 w=  18 h=  34   cut from tribrach_06_lcd_readouts       1KB webp /     1KB png
   tribrach_07_hold_fill              SKIPPED (drawn live by the game)
   tribrach_08_ui_text                x= 113 y= 156 w=1708 h= 708    2712KB ->    33KB webp /   117KB png
   tribrach_09_branding               x=  58 y=  27 w=1801 h= 998    2707KB ->    51KB webp /   414KB png
@@ -29,7 +30,8 @@ Drop them back into _design-assets/tribrach-v2/{hud,startmenu}/ to re-run.
 [startmenu]
   startmenu_01_background            x=   0 y=   0 w=1920 h=1080    1516KB ->   213KB webp /  2100KB png
   startmenu_02_tribrach              x=  54 y= 127 w=1038 h= 826    3202KB ->   155KB webp /  1330KB png
-  startmenu_03_title_branding        x= 965 y=  80 w= 856 h= 242    3201KB ->    32KB webp /   189KB png
+  startmenu_03_title_branding        repaired (erase)
+  startmenu_03_title_branding        x= 965 y=  80 w= 856 h= 236    3201KB ->    25KB webp /   152KB png
   startmenu_04_tst_return_button     x=  51 y=  21 w= 384 h= 156    3201KB ->    15KB webp /    58KB png
   startmenu_05_apprentice_button     x=1207 y= 315 w= 656 h= 129    3200KB ->    13KB webp /   163KB png
   startmenu_06_journeyman_button     x=1207 y= 438 w= 656 h= 128    3200KB ->    14KB webp /   168KB png

@@ -137,12 +137,36 @@ that way.
 
 ## Artwork
 
-Both screens are layer stacks from the v2 art package, drawn on a shared
-1920×1080 design canvas. The whole layout lives in those design pixels and one
-CSS transform letterboxes the stage into the viewport — no breakpoints, nothing
-to keep in sync. The field report and the toast sit *outside* that stage and
-stay ordinary responsive DOM, because shrinking a table of numbers by the same
-factor as the artwork makes it unreadable on a phone.
+Both screens are layer stacks from the v2 art package, drawn on a 1920×1080
+design canvas. The whole layout lives in those design pixels and one CSS
+transform letterboxes the stage into the viewport — no breakpoints, nothing to
+keep in sync. The field report and the toast sit *outside* that stage and stay
+ordinary responsive DOM, because shrinking a table of numbers by the same factor
+as the artwork makes it unreadable on a phone.
+
+### The portrait start menu
+
+Like Stake-Out, each screen gets its own aspect rather than one canvas for the
+whole game (Stake-Out does it with `--aw`/`--ah` per stage; its menu is 5:4 and
+its instrument 2:1). A 16:9 menu letterboxed into an upright phone is a band
+across the middle using about a fifth of the screen.
+
+The difference is that TriBrach's menu is not one baked image — every element is
+already its own sprite, so portrait needed no new art, only a second set of
+rectangles in `MENU_PORTRAIT`. Same sprites, taller canvas, stacked instead of
+side by side; landscape still uses the package's own positions and is untouched.
+
+The portrait canvas is **1200×2300**, deliberately much taller than Stake-Out's
+5:4: at 5:4 a 375×812 phone still fills only 37% of its height, where this fills
+87%. The site photo is scaled to the canvas width and left at the top, with a
+gradient carrying it down into the dark so the stacked buttons sit on clean ink
+— cropping it to *cover* a canvas that tall would throw away the crane skyline,
+which is most of what the shot is for. `static_copy` is dropped in portrait;
+there is no room for a 1792px strip of micro-type and the only part of it that
+carries information (TOOLS | SKILLS | REAL RESULTS) is already in the TST lockup.
+
+The **play** screen stays 1920×1080 in both orientations, because the rig's
+geometry and the drag maths that depends on it are pinned to that canvas.
 
 Most layers are static images. Three things have to be painted live, because the
 package ships them as one frozen sample state and the game needs every state:
@@ -176,19 +200,62 @@ master and two of them kept pixels belonging to a layer above:
   hole smeared shut. The vial and its crosshair are symmetric about the vertical
   axis, so the patch is the glass's own mirror image faded in through a soft
   ellipse.
+- **`startmenu_03_title_branding`** kept a bite of the construction photo above
+  "…ach" and a scrap of the hero's rotation arrows under the "T". Invisible in
+  the landscape menu, because there they land on the identical pixels in the
+  background layer — but the portrait menu moves the wordmark away from the
+  photo and they come with it. Erased by rectangle, not by colour key: the sun
+  in the photo is the same yellow as the wordmark, so nothing can separate them
+  per-pixel.
+
+Two more were fixed at source rather than in code, by re-exporting the art:
+
+- the **bubble** used to carry the vial's crosshair and ring arcs — 8.7% of its
+  pixels — and dragged them around the glass with it. The v2 bubble is clean
+  *and* translucent, so the crosshair now reads through it from the glass layer
+  underneath and refracts correctly at every position instead of being painted
+  on at one.
+- the **knobs** used to carry tribrach-body yellow: 8.5% / 8.5% / 17% of A / B /
+  C, swinging round as a crescent every time they turned. It could not simply be
+  masked off, because ~80% of that yellow had no body pixels behind it. The v2
+  pass fixed both ends at once — knob-only sprites, and a body layer with the
+  knob sockets filled in. The v3 pass then redrew the knobs face-on, which is
+  what finally made the rotation itself correct (see below).
 
 Masters are **not** in this repo — they live in the shared Drive folder under
 `Claude/webapps/tribrach game/updated UI/`. Drop them back into
 `_design-assets/tribrach-v2/{hud,startmenu}/` to re-run the script.
 
-### Known compromise
+### Knob rotation, and why it is now three lines
 
-The two upper knobs are rendered in three-quarter view, so they are ovals. They
-turn by spinning their own bitmap and then clipping the result back to their
-unrotated silhouette — the outline stays pinned exactly where the artwork put it
-while the knurling underneath visibly rotates. Without that clip a spinning oval
-wobbles and uncovers the flattened background behind it. Three face-on knob
-renders would remove the need for the trick entirely.
+The v3 knob art is drawn straight down the axis, so each knob is a **true
+circle** — measured aspect 1.000, alpha filling the circumscribed circle to
+within 0.2%. Rotating the sprite about the middle of its own bitmap is therefore
+exactly correct: the disc maps onto itself at every angle, and the gear teeth
+carry the motion. `drawKnob` is a translate, a rotate and a draw.
+
+It is worth recording what that replaced, because it is the same trap twice.
+Both earlier art passes drew the knobs in three-quarter view, and neither could
+be rotated correctly:
+
+- the cap was an **ellipse**, and an ellipse spun in the screen plane does not
+  map onto itself — the outline lurches twice per turn;
+- the knurl was the **side wall of a cylinder**, which no rotation of a flat
+  bitmap moves correctly at all. Spin it and the shaded wall swings around the
+  cap, tearing a hole where it used to be.
+
+Working around that took an un-squash / rotate / re-squash through a padded
+scratch canvas, with the skirt pinned and only the cap face turning. It worked,
+and it was still a workaround. Face-on art deleted the problem instead.
+
+The small TST-yellow index tick is kept deliberately. The teeth show *that* the
+knob is turning, but there are twenty-odd of them and they all look alike, so
+they cannot show *how far*. The tick sits on the brushed face inside the art's
+own yellow ring — put it on the ring and the two yellows muddle together.
+
+Note that *input* is measured as a plain screen-space angle: a finger sweeping a
+circle turns the screw by the angle swept on the glass, which is what the drag
+feels like and what the tests assert.
 
 ## Tests
 
