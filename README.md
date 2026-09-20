@@ -16,12 +16,16 @@ three rotating knobs instead of prism-pole tilt.
 
 `index.html` is the entire game. Single self-contained file, vanilla JS, no
 build step, no bundler, no runtime dependencies, no external fetches — not even
-a webfont. Deploying is copying one file.
+a webfont. Deploying is copying the file and the `assets/img/` folder beside it.
 
-The `tests/` folder and `package.json` are a **dev-only harness**. Nothing in
-them ships, nothing in them is needed to run or deploy the game, and deleting
-the whole lot would not change a single pixel. The single-file convention is
-intact.
+The game does load image sprites now (the v2 art package — see **Artwork**), but
+it loads them over plain relative paths that resolve with no tooling whatsoever.
+Open `index.html` off the filesystem and it runs, which is exactly how the test
+suite drives it.
+
+The `tests/` and `tools/` folders and `package.json` are a **dev-only harness**.
+Nothing in them ships, nothing in them is needed to run or deploy the game, and
+deleting the whole lot would not change a single pixel.
 
 ## How it plays
 
@@ -38,8 +42,18 @@ of chasing it in circles.
 ### Controls
 - **Drag a knob** — mouse, pen or finger, one shared pointer-event path
 - **Hold Shift while dragging** — 5× finer, for desktop precision work
+- **ESCAPE TO MAIN MENU** — leaves the level. Nothing logged yet and you land
+  back on the menu; part-way through and you still get the field report for the
+  setups you did finish.
+- **LOG AS-IS** — two-press, and always a fail. The hold is the only way to pass.
 - Touch targets are deliberately much larger than the knobs are drawn
 - The sim pauses (and the clock stops) when the tab is hidden
+
+The start menu's TST lockup links out to totalstationtech.com in the same tab.
+
+Portrait phones letterbox a 16:9 stage into an upright screen, so the rig ends
+up small. There is a non-blocking banner suggesting a rotate — deliberately an
+advisory and not a gate, since the game is cramped that way, not broken.
 
 ## The physics
 
@@ -109,12 +123,72 @@ Tolerances and `bubbleHump` are lifted verbatim from Stake-Out so the two games
 grade identically. Setup counts are lower than Stake-Out's 3/4/5/6 points —
 levelling takes longer than taking a shot.
 
-| Tier | Setups | Tolerance | Hold |
-|---|---|---|---|
-| Level 1 — Rookie | 2 | 30% | 1.5s |
-| Level 2 — Journeyman | 3 | 18% | 2.0s |
-| Level 3 — Foreman | 4 | 9% | 2.5s |
-| Level 4 — No Room For Error | 5 | 3% | 3.0s |
+The tier NAMES come from the v2 art package and no longer echo Stake-Out's
+wording. The numbers behind them never moved — the rename was labels only, and
+`tests/physics.spec.js` pins the tolerances, humps and setup counts so it stays
+that way.
+
+| Tier | Setups | Tolerance | Hold | was called |
+|---|---|---|---|---|
+| Apprentice | 2 | 30% | 1.5s | Level 1 — Rookie |
+| Journeyman | 3 | 18% | 2.0s | Level 2 — Journeyman |
+| Foreman | 4 | 9% | 2.5s | Level 3 — Foreman |
+| Shop Rocket | 5 | 3% | 3.0s | Level 4 — No Room For Error |
+
+## Artwork
+
+Both screens are layer stacks from the v2 art package, drawn on a shared
+1920×1080 design canvas. The whole layout lives in those design pixels and one
+CSS transform letterboxes the stage into the viewport — no breakpoints, nothing
+to keep in sync. The field report and the toast sit *outside* that stage and
+stay ordinary responsive DOM, because shrinking a table of numbers by the same
+factor as the artwork makes it unreadable on a phone.
+
+Most layers are static images. Three things have to be painted live, because the
+package ships them as one frozen sample state and the game needs every state:
+
+| Live element | Where it is drawn |
+|---|---|
+| bubble, knobs, tolerance ring | `#rig`, a 1000×1000 canvas over the tribrach |
+| LCD digits (time, offset, hold %) | `#hudfx`, a 1920×1080 overlay canvas |
+| hold-progress arc | `#hudfx` — 40 segments, 9° pitch, from twelve o'clock |
+
+The LCD glyphs come from `assets/img/lcd_digits.png`, the same atlas Stake-Out
+uses, so the two games' readouts match.
+
+### tools/prep_layers.js
+
+Dev-only. The package hands over twenty full-canvas 1920×1080 RGBA PNGs — about
+61MB, including a 2.7MB file holding a 132×132 bubble. The script crops each
+layer to its alpha bounding box, writes `.webp` with a `.png` fallback, and
+prints the offsets that are pasted into the `SPRITES` table in `index.html`.
+61MB becomes about 1MB of WebP. `assets/img/README.txt` records every offset.
+
+It also **repairs two layers**, because the package was split out of a flattened
+master and two of them kept pixels belonging to a layer above:
+
+- **`01_static_ui`** had the sample hold-fill (about a third of the ring) baked
+  into the track, so the bar could never read 0%. The track is 40 segments at 9°,
+  and 180° is exactly 20 of them — so a point reflection through the ring centre
+  lands every lit pixel on a matching *unlit* segment, gaps and all. The wedge is
+  overwritten with its own opposite side.
+- **`03_level_glass`** had a fan artifact where the bubble was lifted off and the
+  hole smeared shut. The vial and its crosshair are symmetric about the vertical
+  axis, so the patch is the glass's own mirror image faded in through a soft
+  ellipse.
+
+Masters are **not** in this repo — they live in the shared Drive folder under
+`Claude/webapps/tribrach game/updated UI/`. Drop them back into
+`_design-assets/tribrach-v2/{hud,startmenu}/` to re-run the script.
+
+### Known compromise
+
+The two upper knobs are rendered in three-quarter view, so they are ovals. They
+turn by spinning their own bitmap and then clipping the result back to their
+unrotated silhouette — the outline stays pinned exactly where the artwork put it
+while the knurling underneath visibly rotates. Without that clip a spinning oval
+wobbles and uncovers the flattened background behind it. Three face-on knob
+renders would remove the need for the trick entirely.
 
 ## Tests
 

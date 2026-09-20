@@ -173,11 +173,15 @@ test.describe('difficulty tiers match Stake-Out', () => {
     expect(levels).toHaveLength(4);
     expect(levels.map(l => l.bubbleTolerancePct)).toEqual([30, 18, 9, 3]);
     expect(levels.map(l => l.bubbleHump)).toEqual([0.50, 0.75, 0.75, 1.00]);
+    /* The LABELS are TriBrach's own, off the v2 art package, and no longer echo
+       Stake-Out's wording. Everything this test actually guards — the order, the
+       tolerances, the humps, the setup counts — is unchanged, which is the point:
+       relabelling a tier must never be able to move its numbers. */
     expect(levels.map(l => l.name)).toEqual([
-      'Level 1 — Rookie',
-      'Level 2 — Journeyman',
-      'Level 3 — Foreman',
-      'Level 4 — No Room For Error',
+      'Apprentice',
+      'Journeyman',
+      'Foreman',
+      'Shop Rocket',
     ]);
     // tribrach-specific: fewer setups than Stake-Out's 3/4/5/6 points
     expect(levels.map(l => l.setups)).toEqual([2, 3, 4, 5]);

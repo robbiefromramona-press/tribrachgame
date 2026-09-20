@@ -1,247 +1,269 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
-<meta name="theme-color" content="#0d0d0f">
-<title>Tribrach — Leveling Simulator</title>
-<meta name="description" content="Level the bubble by turning the three tribrach screws. A TotalStationTech field-skills trainer.">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TriBrach — Level It Right</title>
+<meta name="description" content="Level a tribrach by turning its three leveling screws. A TotalStationTech field trainer.">
+
 <style>
 /* ==========================================================================
-   TRIBRACH LEVELING SIMULATOR — TotalStationTech
+   TriBrach — Level It Right
    --------------------------------------------------------------------------
-   Single self-contained file. No build step, no bundler, no external fetches.
-   Deploy = drop this next to a netlify.toml with `publish = "."`.
+   ONE self-contained file. No build step, no bundler, no framework. The only
+   things it loads are the layer sprites under assets/img/, over plain relative
+   paths, which is why it still runs straight off file:// in the test suite.
 
-   Skin lives in the custom properties below. The body colour is ONE token
-   (--body-yellow / --body-yellow-*) precisely so the olive-drab variant the
-   original brief asked for is a three-line change, not a repaint.
+   THE STAGE. Both art screens were drawn on a single 1920x1080 canvas and
+   every layer in the package is registered to it, so the whole layout lives in
+   "design pixels" and one transform scales the lot to fit the viewport. That
+   is the entire responsive strategy: no breakpoints, no reflow, nothing to
+   keep in sync. The field report and the toast sit OUTSIDE the stage and stay
+   ordinary responsive DOM, because shrinking a table of numbers by the same
+   factor as the artwork makes it unreadable on a phone.
    ========================================================================== */
+
 :root{
-  /* --- skin ------------------------------------------------------------- */
-  --body-yellow:      #f5c218;
-  --body-yellow-lit:  #ffdc55;
-  --body-yellow-dim:  #a8820c;
-  --body-yellow-edge: #6e5406;
-
-  --ink:        #0d0d0f;
-  --panel:      #17171b;
-  --panel-lit:  #212128;
-  --hair:       #34343d;
-  --text:       #e9e9ee;
-  --text-dim:   #9a9aa6;
-  --yellow:     #f5c218;
-  --green:      #22d422;
-  --red:        #ff4b3e;
-
-  --mono: "Courier New", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --yellow:      #f5c218;
+  --yellow-lit:  #ffdc55;
+  --yellow-dim:  #a8820c;
+  --lcd-green:   #0ae805;   /* sampled from Stake-Out's digit atlas */
+  --ink:         #05060a;
+  --font-display:'Arial Narrow','Helvetica Neue Condensed','Helvetica Neue',Arial,sans-serif;
+  --font-mono:   'Courier New',Consolas,'Liberation Mono',monospace;
 }
 
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0;height:100%}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;overflow:hidden}
 body{
   background:var(--ink);
-  color:var(--text);
-  font-family:var(--mono);
-  /* The rig is a drag surface. Without this, dragging a knob scrolls the page
-     on every touch device. Learned the hard way on Stake-Out V11.1. */
-  overscroll-behavior:none;
-  -webkit-user-select:none;user-select:none;
+  color:#e8e8ea;
+  font-family:var(--font-display);
+  -webkit-font-smoothing:antialiased;
+  -webkit-tap-highlight-color:transparent;
 }
-body.is-playing{overflow:hidden;position:fixed;inset:0;width:100%}
 
-.screen{display:none;min-height:100%;padding:16px}
-.screen.is-on{display:flex;flex-direction:column;align-items:center}
-
-/* --- shared chrome ------------------------------------------------------ */
-.badge{
-  display:inline-block;background:var(--yellow);color:#000;font-weight:bold;
-  letter-spacing:.14em;font-size:12px;padding:5px 11px;border-radius:3px;
+/* ---- the letterbox -------------------------------------------------------
+   #app is the viewport; #stage is the 1920x1080 design canvas, moved and
+   scaled into it by JS. transform-origin is the top-left corner so the maths
+   is a plain "offset then scale" with nothing to unpick. */
+#app{position:fixed;inset:0;overflow:hidden;background:#000}
+#stage{
+  position:absolute;left:0;top:0;
+  width:1920px;height:1080px;
+  transform-origin:0 0;
+  will-change:transform;
 }
-h1{font-size:clamp(26px,7vw,44px);letter-spacing:.06em;margin:14px 0 2px;text-align:center}
-h1 .thin{color:var(--text-dim);font-weight:normal}
-.sub{color:var(--text-dim);font-size:13px;letter-spacing:.1em;text-align:center;margin:0 0 22px}
 
-.btn{
-  font-family:var(--mono);font-weight:bold;letter-spacing:.1em;font-size:15px;
-  padding:14px 26px;border-radius:5px;border:2px solid var(--hair);
-  background:var(--panel-lit);color:var(--text);cursor:pointer;
-  min-height:48px;  /* thumb-sized on mobile, always */
-}
-.btn:hover{border-color:#50505c}
-.btn.primary{background:var(--yellow);color:#000;border-color:var(--body-yellow-dim)}
-.btn.primary:hover{background:var(--body-yellow-lit)}
-.btn.danger{border-color:#5e2a26;color:#ffb9b3}
-.btn:disabled{opacity:.38;cursor:not-allowed}
+.screen{display:none}
+#stage .screen{position:absolute;inset:0}
+#stage .screen.is-on{display:block}
 
-/* --- menu --------------------------------------------------------------- */
-.card{
-  width:100%;max-width:520px;background:var(--panel);border:1px solid var(--hair);
-  border-radius:10px;padding:20px;margin-bottom:14px;
-}
-.card h2{font-size:13px;letter-spacing:.16em;color:var(--text-dim);margin:0 0 14px;font-weight:normal}
-.lvl{
-  display:block;width:100%;text-align:left;font-family:var(--mono);
-  background:var(--panel-lit);border:2px solid var(--hair);color:var(--text);
-  border-radius:6px;padding:13px 15px;margin-bottom:9px;cursor:pointer;min-height:48px;
-}
-.lvl:last-child{margin-bottom:0}
-.lvl[aria-checked="true"]{border-color:var(--yellow);background:#2a2412}
-.lvl .name{font-weight:bold;letter-spacing:.05em;font-size:15px}
-.lvl .meta{color:var(--text-dim);font-size:12px;margin-top:4px;letter-spacing:.05em}
-.lvl[aria-checked="true"] .meta{color:var(--body-yellow-lit)}
+/* Every static art layer is an absolutely positioned image at its measured
+   spot on the design canvas. Positions come from assets/img/README.txt and are
+   written into the SPRITES table below — nothing here is hand-placed. */
+.ly{position:absolute;display:block;pointer-events:none;user-select:none;-webkit-user-drag:none}
 
-.brief{font-size:13px;line-height:1.65;color:var(--text-dim);max-width:520px}
-.brief b{color:var(--text)}
-.brief code{background:var(--panel-lit);padding:1px 5px;border-radius:3px;color:var(--yellow)}
-
-/* --- play --------------------------------------------------------------- */
-#screen-play{padding:8px;justify-content:flex-start}
-.hud{
-  width:100%;max-width:560px;display:grid;
-  grid-template-columns:1fr auto;gap:6px 12px;align-items:center;
-  padding:8px 12px;background:var(--panel);border:1px solid var(--hair);
-  border-radius:8px;margin-bottom:8px;
-}
-.hud .lname{font-size:13px;font-weight:bold;letter-spacing:.06em}
-.hud .setup{font-size:12px;color:var(--text-dim);letter-spacing:.08em}
-.hud .clock{font-size:22px;font-weight:bold;letter-spacing:.06em;color:var(--yellow);text-align:right;line-height:1}
-.hud .clock.is-warn{color:var(--red)}
-.hud .tol{font-size:11px;color:var(--text-dim);text-align:right;letter-spacing:.06em}
-
-/* The rig. A square that takes whatever the viewport can spare. `touch-action:
-   none` is what actually makes drag-to-rotate work on a phone — without it the
-   browser claims the gesture for scrolling before pointermove ever fires. */
 #rig{
-  width:100%;max-width:min(560px, calc(100vh - 230px));
-  aspect-ratio:1/1;display:block;touch-action:none;cursor:grab;
+  position:absolute;
+  touch-action:none;            /* without this the browser eats the drag */
+  cursor:grab;
 }
 #rig.is-turning{cursor:grabbing}
+#hudfx{position:absolute;pointer-events:none}
 
-.readout{
-  width:100%;max-width:560px;display:flex;gap:8px;margin-top:8px;
+/* ---- art buttons ---------------------------------------------------------
+   A real <button>, transparent, sitting exactly on its layer's rectangle with
+   the layer art as its only content. Keeps the whole thing keyboard-reachable
+   and screen-reader-sane, which a canvas hit-test would not. */
+.artbtn{
+  position:absolute;padding:0;border:0;background:none;
+  cursor:pointer;display:block;-webkit-tap-highlight-color:transparent;
 }
-.readout .box{
-  flex:1;background:var(--panel);border:1px solid var(--hair);border-radius:8px;
-  padding:9px 6px;text-align:center;
+.artbtn img{display:block;width:100%;height:100%;pointer-events:none;-webkit-user-drag:none}
+.artbtn:focus-visible{outline:3px solid var(--yellow);outline-offset:4px;border-radius:6px}
+
+/* Difficulty plates. The art gives one state per tier, so selection has to be
+   drawn: unpicked tiers are dimmed, the picked one gets its full colour back
+   plus a glow that follows the plate's alpha rather than its bounding box. */
+.lvl img{
+  filter:brightness(.52) saturate(.6);
+  transition:filter .13s ease;
 }
-.readout .k{font-size:10px;color:var(--text-dim);letter-spacing:.14em}
-.readout .v{font-size:19px;font-weight:bold;letter-spacing:.04em;margin-top:3px}
-.readout .box.ok .v{color:var(--green)}
-.readout .box.ok{border-color:#1d5c1d}
-
-.screws{width:100%;max-width:560px;display:flex;gap:8px;margin-top:8px}
-.screws .s{
-  flex:1;background:var(--panel);border:1px solid var(--hair);border-radius:8px;
-  padding:7px 4px;text-align:center;font-size:13px;letter-spacing:.06em;
+.lvl:hover img{filter:brightness(.8) saturate(.85)}
+.lvl[aria-checked="true"] img{
+  filter:brightness(1.04)
+         drop-shadow(0 0 9px rgba(245,194,24,.95))
+         drop-shadow(0 0 24px rgba(245,194,24,.5));
 }
-.screws .s .id{color:var(--text-dim);font-size:10px;letter-spacing:.16em}
-.screws .s .t{font-weight:bold;margin-top:2px}
-.screws .s.live{border-color:var(--yellow);background:#2a2412}
-.screws .s.stop .t{color:var(--red)}
+#startBtn img,#escBtn img,#tstBtn img{transition:filter .13s ease}
+#startBtn:hover img{filter:brightness(1.12) drop-shadow(0 0 16px rgba(245,194,24,.55))}
+#escBtn:hover img{filter:brightness(1.15)}
+#tstBtn:hover img{filter:brightness(1.25)}
 
-.playbar{width:100%;max-width:560px;display:flex;gap:8px;margin-top:8px}
-.playbar .btn{flex:1;font-size:13px;padding:13px 10px}
+/* ---- play-screen overlay -------------------------------------------------
+   The new art has no home for the setup counter, the tolerance reminder or the
+   log-as-is control, so they live in the empty dark column under the escape
+   button. Sized in design pixels like everything else on the stage. */
+.ov{position:absolute;pointer-events:none;font-family:var(--font-display)}
+#hudLevel{
+  left:1480px;top:316px;width:396px;height:52px;
+  font-size:34px;font-weight:700;letter-spacing:3px;color:var(--yellow);
+  text-align:center;line-height:52px;text-transform:uppercase;
+  text-shadow:0 0 18px rgba(245,194,24,.35);
+  white-space:nowrap;overflow:hidden;
+}
+#hudSetup{
+  left:1480px;top:624px;width:396px;height:40px;
+  font-size:28px;font-weight:700;letter-spacing:4px;color:#e9e9ec;
+  text-align:center;line-height:40px;
+}
+#hudTol{
+  left:1480px;top:666px;width:396px;height:32px;
+  font-size:21px;letter-spacing:3px;color:#8d8f98;text-align:center;line-height:32px;
+}
+#logBtn{
+  position:absolute;left:1524px;top:714px;width:308px;height:74px;
+  font-family:var(--font-display);font-size:25px;font-weight:700;letter-spacing:3px;
+  color:#ffd9d9;background:linear-gradient(#3a1414,#240c0c);
+  border:2px solid #7d2020;border-radius:9px;cursor:pointer;
+}
+#logBtn:hover{background:linear-gradient(#4d1a1a,#2d0f0f)}
+#logBtn.armed{color:#fff;background:linear-gradient(#a81f1f,#6e1212);border-color:#e04a4a}
 
+/* Screen-reader / test mirror of the values the LCD paints. Present in the
+   DOM and accurate, just not shown — the canvas glyphs are decoration. */
+.sr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+    clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+
+/* ---- rotate advisory -----------------------------------------------------
+   Deliberately NOT a gate. A modal here would block the game behind it, and a
+   phone held upright is cramped rather than unplayable, so this says its piece
+   and gets out of the way. */
+#rotate{
+  position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);
+  display:none;justify-content:center;pointer-events:none;z-index:30;
+}
+#rotate span{
+  background:rgba(8,9,14,.9);border:1px solid var(--yellow-dim);border-radius:999px;
+  color:var(--yellow);font-size:12px;letter-spacing:2.5px;padding:8px 18px;
+}
+body.is-portrait.is-playing #rotate{display:flex}
+
+/* ---- field report --------------------------------------------------------
+   Outside the stage on purpose (see the note at the top). */
+#screen-report{
+  position:fixed;inset:0;z-index:40;background:#0a0b10;
+  overflow-y:auto;padding:22px 16px calc(env(safe-area-inset-bottom,0px) + 22px);
+}
+#screen-report.is-on{display:flex;flex-direction:column;align-items:center}
+.badge{
+  display:inline-block;background:var(--yellow);color:#000;font-size:11px;font-weight:700;
+  letter-spacing:3px;padding:5px 12px;border-radius:3px;
+}
+.ticket{
+  width:100%;max-width:620px;margin-top:16px;background:#111319;
+  border:1px solid #23262f;border-radius:10px;overflow:hidden;
+}
+.ticket .th{padding:14px 16px;border-bottom:1px solid #23262f;background:#15181f}
+.ticket .th .t{font-size:17px;font-weight:700;letter-spacing:3px;color:var(--yellow)}
+.ticket .th .s{font-size:11px;letter-spacing:1.6px;color:#82858f;margin-top:5px}
+.ticket table{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:12.5px}
+.ticket th{
+  text-align:left;padding:9px 16px;background:#191c24;color:#9a9da6;
+  font-family:var(--font-display);font-size:11px;letter-spacing:2px;
+}
+.ticket td{padding:9px 16px;border-top:1px solid #1d2028;color:#d6d8de}
+.ticket td.p{color:#3ddc5a;font-weight:700}
+.ticket td.f{color:#ff5f5f;font-weight:700}
+.ticket .tot{
+  display:flex;justify-content:space-between;padding:13px 16px;
+  border-top:1px solid #23262f;background:#15181f;
+  font-size:12px;letter-spacing:2px;color:var(--yellow);
+}
+.rptbar{display:flex;gap:10px;margin-top:16px;width:100%;max-width:620px}
+.btn{
+  flex:1;font-family:var(--font-display);font-size:14px;font-weight:700;letter-spacing:2.5px;
+  padding:14px 16px;border-radius:7px;cursor:pointer;
+  background:#1b1e26;color:#e8e8ea;border:1px solid #333744;
+}
+.btn:hover{background:#242833}
+.btn.primary{background:var(--yellow);color:#000;border-color:var(--yellow-dim)}
+.btn.primary:hover{background:var(--yellow-lit)}
+
+/* ---- toast --------------------------------------------------------------- */
 .toast{
-  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));
-  background:var(--panel-lit);border:2px solid var(--hair);border-radius:7px;
-  padding:11px 20px;font-weight:bold;letter-spacing:.08em;font-size:14px;
-  opacity:0;pointer-events:none;transition:opacity .18s;z-index:50;white-space:nowrap;
+  position:fixed;left:50%;top:18px;transform:translateX(-50%);
+  background:#12141b;border:1px solid #2c3040;border-radius:7px;
+  padding:11px 20px;font-size:13px;font-weight:700;letter-spacing:2px;
+  opacity:0;transition:opacity .18s ease;pointer-events:none;z-index:60;white-space:nowrap;
 }
 .toast.is-on{opacity:1}
-.toast.ok{border-color:#1d5c1d;color:#9df09d}
-.toast.no{border-color:#5e2a26;color:#ffb9b3}
+.toast.ok{border-color:#2f8f3f;color:#7dffa0}
+.toast.no{border-color:#8f2f2f;color:#ff9a9a}
 
-/* --- field report ------------------------------------------------------- */
-.ticket{
-  width:100%;max-width:560px;background:#f4f1e8;color:#16160f;border-radius:6px;
-  padding:18px;font-size:13px;line-height:1.5;
+@media (prefers-reduced-motion:reduce){
+  .lvl img,#startBtn img,#escBtn img,#tstBtn img,.toast{transition:none}
 }
-.ticket .th{border-bottom:2px solid #16160f;padding-bottom:9px;margin-bottom:11px}
-.ticket .th .t{font-weight:bold;letter-spacing:.14em;font-size:15px}
-.ticket .th .s{font-size:11px;color:#55554a;letter-spacing:.06em;margin-top:3px}
-.ticket table{width:100%;border-collapse:collapse;font-size:12px}
-.ticket th{text-align:left;border-bottom:1px solid #a9a698;padding:5px 3px;font-size:10px;letter-spacing:.09em;color:#55554a}
-.ticket td{padding:6px 3px;border-bottom:1px dotted #bfbcae}
-.ticket td.p{font-weight:bold;color:#0a7a0a}
-.ticket td.f{font-weight:bold;color:#b02418}
-.ticket .tot{display:flex;justify-content:space-between;margin-top:13px;padding-top:9px;border-top:2px solid #16160f;font-weight:bold;letter-spacing:.07em}
-.rptbar{width:100%;max-width:560px;display:flex;gap:8px;margin-top:14px}
-.rptbar .btn{flex:1;font-size:13px}
-
-.foot{color:#55555f;font-size:11px;letter-spacing:.09em;margin-top:22px;text-align:center}
 </style>
 </head>
+
 <body>
 
-<!-- ======================= MENU ======================= -->
-<section id="screen-menu" class="screen is-on">
-  <span class="badge">TST&nbsp;&nbsp;FIELD TRAINER</span>
-  <h1>TRIBRACH<br><span class="thin">LEVELING SIM</span></h1>
-  <p class="sub">MEASURE · LAYOUT · BUILD · REPEAT</p>
+<div id="app">
+  <div id="stage">
 
-  <div class="card">
-    <h2>SELECT DIFFICULTY</h2>
-    <div id="lvlList" role="radiogroup" aria-label="Difficulty"></div>
+    <!-- ======================= START MENU =======================
+         Layer order, bottom to top: 01 background, 02 hero tribrach,
+         03 title, 04 TST return, 05-08 difficulty, 09 start, 10 copy.
+         The decorative layers are built from the SPRITES table at boot; only
+         the things you can actually press are written out here. -->
+    <section id="screen-menu" class="screen is-on">
+      <a  id="tstBtn"  class="artbtn" href="https://totalstationtech.com"
+          aria-label="Total Station Tech — back to the main site"></a>
+      <div id="lvlList" role="radiogroup" aria-label="Difficulty"></div>
+      <button id="startBtn" class="artbtn" type="button">
+        <span class="sr">Start</span>
+      </button>
+    </section>
+
+    <!-- ======================= PLAY =======================
+         01 static UI, then #rig (layers 02-05, live), then #hudfx
+         (layers 06-07, live), then 08 labels, 09 branding, 10 escape. -->
+    <section id="screen-play" class="screen">
+      <canvas id="rig" width="1000" height="1000" role="application"
+              aria-label="Tribrach. Drag a leveling screw to turn it."></canvas>
+      <canvas id="hudfx" width="1920" height="1080" aria-hidden="true"></canvas>
+
+      <button id="quitBtn" class="artbtn" type="button">
+        <span class="sr">Escape to main menu</span>
+      </button>
+
+      <div class="ov" id="hudLevel">—</div>
+      <div class="ov" id="hudSetup">SETUP 1 OF 2</div>
+      <div class="ov" id="hudTol">TOL 30%</div>
+      <button id="logBtn" type="button">LOG AS-IS</button>
+
+      <span class="sr" id="hudClock">00:00:00</span>
+      <span class="sr" id="rdOffset">—</span>
+      <span class="sr" id="rdHold">0.0s</span>
+    </section>
+
   </div>
+</div>
 
-  <button id="startBtn" class="btn primary" style="width:100%;max-width:520px">START SETUP</button>
-
-  <div class="card" style="margin-top:14px">
-    <h2>HOW IT WORKS</h2>
-    <p class="brief" style="margin:0">
-      Drag any of the three knurled knobs to turn that leveling screw. The bubble
-      runs <b>toward</b> the screw you raise. Centre it inside the dashed ring and
-      <b>hold it there</b> until the ring closes — a bubble that only touches
-      centre on its way past hasn't been levelled.<br><br>
-      Field trick that actually works: turn <b>two knobs at once, in opposite
-      directions</b> — the bubble then moves on one axis only, so you can kill
-      one error at a time instead of chasing it in circles.
-    </p>
-  </div>
-  <p class="foot">TOTALSTATIONTECH.COM</p>
-</section>
-
-<!-- ======================= PLAY ======================= -->
-<section id="screen-play" class="screen">
-  <div class="hud">
-    <div>
-      <div class="lname" id="hudLevel">—</div>
-      <div class="setup" id="hudSetup">SETUP 1 OF 2</div>
-    </div>
-    <div>
-      <div class="clock" id="hudClock">00:00.0</div>
-      <div class="tol" id="hudTol">TOL 30%</div>
-    </div>
-  </div>
-
-  <canvas id="rig" width="1000" height="1000" role="application"
-          aria-label="Tribrach. Drag a leveling screw to turn it."></canvas>
-
-  <div class="readout">
-    <div class="box" id="boxOffset"><div class="k">OFFSET</div><div class="v" id="rdOffset">—</div></div>
-    <div class="box" id="boxHold"><div class="k">HOLD</div><div class="v" id="rdHold">0.0s</div></div>
-  </div>
-
-  <div class="screws" id="screws" aria-label="Screw positions, in turns"></div>
-
-  <div class="playbar">
-    <button id="logBtn" class="btn danger">LOG AS-IS</button>
-    <button id="quitBtn" class="btn">ABANDON</button>
-  </div>
-</section>
-
-<!-- ==================== FIELD REPORT ==================== -->
+<!-- ==================== FIELD REPORT ====================
+     Kept outside the stage so its numbers stay legible at any size. -->
 <section id="screen-report" class="screen">
   <span class="badge">FIELD REPORT</span>
-  <div class="ticket" id="ticket" style="margin-top:14px"></div>
+  <div class="ticket" id="ticket"></div>
   <div class="rptbar">
-    <button id="againBtn" class="btn primary">RUN IT AGAIN</button>
-    <button id="menuBtn" class="btn">MENU</button>
+    <button id="againBtn" class="btn primary" type="button">RUN IT AGAIN</button>
+    <button id="menuBtn" class="btn" type="button">MENU</button>
   </div>
 </section>
 
+<div id="rotate"><span>TURN YOUR PHONE SIDEWAYS FOR A BIGGER RIG</span></div>
 <div class="toast" id="toast"></div>
 
 <script id="tribrach-sim">
@@ -343,14 +365,18 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
      `points` (3/4/5/6) with 2/3/4/5 — levelling a tribrach takes longer than
      taking a shot, so the same count would make Level 4 a slog.
 
+     The NAMES follow the v2 art package (Apprentice / Journeyman / Foreman /
+     Shop Rocket). Only the labels moved: every number below is untouched, and
+     the order is the same, so tier 4 is still the 3% ring it always was.
+
      dwellSec is the new idea and the whole win condition: the bubble has to
      STAY inside tolerance that long, continuously. Judged on the rendered
      position x, never on the target T, so overshoot costs you the hold. */
   var LEVELS = [
-    { name: 'Level 1 — Rookie',            setups: 2, bubbleTolerancePct: 30, bubbleHump: 0.50, dwellSec: 1.5 },
-    { name: 'Level 2 — Journeyman',        setups: 3, bubbleTolerancePct: 18, bubbleHump: 0.75, dwellSec: 2.0 },
-    { name: 'Level 3 — Foreman',           setups: 4, bubbleTolerancePct: 9,  bubbleHump: 0.75, dwellSec: 2.5 },
-    { name: 'Level 4 — No Room For Error', setups: 5, bubbleTolerancePct: 3,  bubbleHump: 1.00, dwellSec: 3.0 }
+    { name: 'Apprentice',   setups: 2, bubbleTolerancePct: 30, bubbleHump: 0.50, dwellSec: 1.5 },
+    { name: 'Journeyman',   setups: 3, bubbleTolerancePct: 18, bubbleHump: 0.75, dwellSec: 2.0 },
+    { name: 'Foreman',      setups: 4, bubbleTolerancePct: 9,  bubbleHump: 0.75, dwellSec: 2.5 },
+    { name: 'Shop Rocket',  setups: 5, bubbleTolerancePct: 3,  bubbleHump: 1.00, dwellSec: 3.0 }
   ];
 
   /* ---- spring / damper -------------------------------------------------- */
@@ -364,7 +390,7 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
      steady state was never actually steady and the per-frame jitter just added
      texture. Here the target goes perfectly still the moment you let go of a
      knob, which turns that same jitter into the only thing standing between
-     you and a pass — and at Level 4's 3% ring, holding for three seconds
+     you and a pass — and at tier 4's 3% ring, holding for three seconds
      against full jitter is not hard, it is a coin flip. So jitter fades out as
      the bubble settles near centre (see JITTER_FLOOR). Off-centre it is as
      lively as Stake-Out; parked dead centre it calms down like real fluid. */
@@ -374,7 +400,7 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
   var JITTER     = 1.5;
 
   /* Below this offset (in vial radii) jitter is scaled down to JITTER_FLOOR,
-     ramping linearly. 0.34 sits just outside Level 1's 30% ring, so every tier
+     ramping linearly. 0.34 sits just outside tier 1's 30% ring, so every tier
      gets its calm zone at the same physical place on the glass. */
   var JITTER_CALM_AT = 0.34;
   var JITTER_FLOOR   = 0.18;
@@ -451,13 +477,19 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
 
 <script id="tribrach-app">
 /* ==========================================================================
-   Renderer + game shell.
+   Renderer + game shell, v2 art package.
    --------------------------------------------------------------------------
-   The rig is drawn into a single canvas on a fixed 1000x1000 logical grid and
-   scaled to whatever box CSS gives it. That is the whole responsive strategy:
-   one coordinate space, one scale factor, no breakpoints, and the reference
-   render rebuilt in Canvas rather than sliced up into images that go soft on a
-   retina phone.
+   The screens are photo-real layer stacks, not procedural drawing any more.
+   Two things still have to be painted every frame, because the art package
+   ships them as single frozen states and the game needs every state:
+
+     - the bubble, the knobs and the tolerance ring   -> #rig    (1000x1000)
+     - the LCD digits and the hold-progress arc       -> #hudfx  (1920x1080)
+
+   #rig is a SQUARE canvas covering the design rectangle the tribrach body
+   occupies. Square matters: the knob drag maths measures angles, and a
+   non-uniform scale would turn every circular gesture into an elliptical one
+   and quietly skew the rotation the player gets for a given sweep.
    ========================================================================== */
 (function () {
   'use strict';
@@ -465,35 +497,216 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
   var SIM = window.TribrachSim;
   var $ = function (id) { return document.getElementById(id); };
 
-  /* ---- rig geometry, in logical units ----------------------------------- */
-  var BODY = { x: 500, y: 470 };
-  var VIAL = { x: 500, y: 430, r: 165 };
-  var KNOB_ORBIT = 345;
-  var KNOB_R = 76;
-  var HIT_R = 118;          // generous on purpose: the thumb target is much
-                            // bigger than the knob looks on a desktop screen
+  /* ====================================================================== */
+  /* WHERE EVERYTHING IS                                                    */
+  /* ====================================================================== */
+  /* Design canvas both art packages were exported against. */
+  var DESIGN_W = 1920, DESIGN_H = 1080;
 
-  /* The plate is not a triangle. On a real tribrach — and in the reference
-     render — it is a hub with three arms that swell into a lobe around each
-     screw, with concave fillets between them. Drawing it as hub + arms + lobes
-     and letting them union gets that shape for free; a polygon cannot, which
-     is why the first pass had the knobs hanging off a flat edge. */
-  var HUB_R = 252;
-  var LOBE_R = 122;
-  var ARM_W = 196;
+  /* Sprite rectangles on that canvas. Generated by tools/prep_layers.js and
+     copied verbatim from its output — see assets/img/README.txt. Nothing here
+     was placed by eye, which is why the stack registers without fiddling. */
+  var SPRITES = {
+    hud: {
+      tribrach_01_static_ui:      { x: 0,    y: 0,   w: 1920, h: 1080 },
+      tribrach_02_static_body:    { x: 475,  y: 45,  w: 970,  h: 982 },
+      tribrach_03_level_glass:    { x: 733,  y: 207, w: 457,  h: 421 },
+      knob_a:                     { x: 490,  y: 243, w: 170,  h: 186 },
+      knob_b:                     { x: 1268, y: 242, w: 173,  h: 187 },
+      knob_c:                     { x: 842,  y: 729, w: 235,  h: 237 },
+      tribrach_05_bubble:         { x: 1008, y: 277, w: 132,  h: 132 },
+      pct_offset:                 { x: 373,  y: 339, w: 53,   h: 55 },
+      pct_hold:                   { x: 279,  y: 647, w: 45,   h: 47 },
+      tribrach_08_ui_text:        { x: 113,  y: 156, w: 1708, h: 708 },
+      tribrach_09_branding:       { x: 58,   y: 27,  w: 1801, h: 998 },
+      tribrach_10_escape_button:  { x: 1480, y: 407, w: 396,  h: 186 }
+    },
+    startmenu: {
+      startmenu_01_background:        { x: 0,    y: 0,   w: 1920, h: 1080 },
+      startmenu_02_tribrach:          { x: 54,   y: 127, w: 1038, h: 826 },
+      startmenu_03_title_branding:    { x: 965,  y: 80,  w: 856,  h: 242 },
+      startmenu_04_tst_return_button: { x: 51,   y: 21,  w: 384,  h: 156 },
+      startmenu_05_apprentice_button: { x: 1207, y: 315, w: 656,  h: 129 },
+      startmenu_06_journeyman_button: { x: 1207, y: 438, w: 656,  h: 128 },
+      startmenu_07_foreman_button:    { x: 1207, y: 552, w: 656,  h: 129 },
+      startmenu_08_shop_rocket_button:{ x: 1207, y: 666, w: 656,  h: 130 },
+      startmenu_09_start_button:      { x: 1207, y: 765, w: 649,  h: 202 },
+      startmenu_10_static_copy:       { x: 42,   y: 647, w: 1792, h: 370 }
+    }
+  };
 
-  /* Screw angles are in maths convention (+y up); the canvas is +y down. This
-     single negation is the ONLY place the two conventions meet. */
-  function toScreen(vx, vy, cx, cy, scale) {
-    return { x: cx + vx * scale, y: cy - vy * scale };
-  }
+  /* The square of design canvas #rig owns. Chosen so the body sprite
+     (475,45 -> 1445,1027) sits comfortably inside with a little air, and so
+     the side comes out at exactly 1000 — which makes the rig's logical unit
+     and the design pixel the same size, and the scale factor between them 1. */
+  var RIG = { x: 460, y: 30, side: 1000 };
 
+  /* Everything below is in RIG-LOCAL units, i.e. design minus RIG's origin. */
+  function local(s) { return { x: s.x - RIG.x, y: s.y - RIG.y, w: s.w, h: s.h }; }
+  function centre(s) { var l = local(s); return { x: l.x + l.w / 2, y: l.y + l.h / 2 }; }
+
+  var GLASS = local(SPRITES.hud.tribrach_03_level_glass);
+  var VIAL = { x: GLASS.x + GLASS.w / 2, y: GLASS.y + GLASS.h / 2 };
+
+  /* How far the bubble's centre may travel from the vial's, in rig units. The
+     glass is very slightly elliptical (it is a perspective render), so the two
+     axes differ; the physics stays a unit circle and the renderer stretches
+     it, exactly like the old build stretched a unit circle to VIAL.r. */
+  var BUBBLE_R = SPRITES.hud.tribrach_05_bubble.w / 2;
+  var TRAVEL_X = GLASS.w / 2 - BUBBLE_R - 4;
+  var TRAVEL_Y = GLASS.h / 2 - BUBBLE_R - 4;
+
+  /* Knobs, in SIM.DIRS order: A upper-left, B upper-right, C bottom. The
+     sprite centres are measured, not derived — the render has the bottom knob
+     noticeably larger because it is nearest the camera. */
+  var KNOB_ART = [SPRITES.hud.knob_a, SPRITES.hud.knob_b, SPRITES.hud.knob_c];
   var KNOBS = SIM.DIRS.map(function (d, i) {
-    var p = toScreen(d.x, d.y, BODY.x, BODY.y, KNOB_ORBIT);
-    return { id: d.id, i: i, x: p.x, y: p.y };
+    var art = KNOB_ART[i];
+    var c = centre(art);
+    var drawn = Math.max(art.w, art.h) / 2;
+    return {
+      id: d.id, i: i, x: c.x, y: c.y,
+      art: local(art),
+      r: drawn,
+      /* Generous on purpose: the thumb target is much bigger than the knob
+         looks on a desktop screen, and the two upper knobs are drawn small by
+         perspective without being any less important. */
+      hit: Math.max(drawn + 44, 122)
+    };
   });
 
-  /* ---- state ------------------------------------------------------------ */
+  /* The hold-progress ring, in DESIGN coordinates — it is painted on #hudfx,
+     not on the rig. Centre and radii were fitted to the lit arc the art
+     package ships (layer 07), which is why they are not round numbers. */
+  var RING = { x: 271, y: 654, rIn: 101, rOut: 139, segs: 45, gapDeg: 1.6 };
+
+  /* LCD slots, also design coordinates, measured off layer 06's baked sample
+     values. gh is the glyph height to draw at. */
+  var LCD = {
+    time:   { groups: [150, 246, 342], gw: 81, y: 186, gh: 50,
+              colons: [[233, 196], [329, 196], [227, 220], [322, 220]], dot: [15, 14] },
+    offset: { right: 368, y: 339, gh: 55, pct: SPRITES.hud.pct_offset },
+    hold:   { cx: RING.x, y: 639, gh: 55, pct: SPRITES.hud.pct_hold }
+  };
+
+  var LCD_GREEN = '#0ae805';   /* sampled from the atlas, see the CSS token */
+
+  /* ====================================================================== */
+  /* SPRITE LOADING                                                         */
+  /* ====================================================================== */
+  /* WebP with a PNG beside it, the same arrangement Stake-Out uses. Every
+     browser that matters reads WebP; the fallback is there so a stale one
+     degrades to a slower load rather than a blank screen. */
+  var IMAGES = {};
+  function sprite(group, name) {
+    var key = group + '/' + name;
+    if (IMAGES[key]) return IMAGES[key];
+    var img = new Image();
+    img.decoding = 'async';
+    img.addEventListener('error', function () {
+      if (img.src.indexOf('.webp') >= 0) img.src = img.src.replace(/\.webp$/, '.png');
+    });
+    img.src = 'assets/img/' + group + '/' + name + '.webp';
+    IMAGES[key] = img;
+    return img;
+  }
+  function ready(img) { return img && img.complete && img.naturalWidth > 0; }
+
+  /* The digit atlas is shared with Stake-Out so the two games read the same:
+     three rows (green, yellow, red) of eleven 96x132 cells, 0-9 then '.'. */
+  var atlas = new Image();
+  atlas.addEventListener('error', function () {
+    if (atlas.src.indexOf('.webp') >= 0) atlas.src = atlas.src.replace(/\.webp$/, '.png');
+  });
+  atlas.src = 'assets/img/lcd_digits.png';
+  var CELL_W = 96, CELL_H = 132;
+  var ATLAS_ROW = { green: 0, yellow: 1, red: 2 };
+  var ADV_DIGIT = 0.60, ADV_DOT = 0.26;   // glyph advance as a fraction of height
+
+  function glyphCell(ch) { return ch === '.' ? 10 : Number(ch); }
+
+  function textWidth(text, gh) {
+    var w = 0;
+    for (var i = 0; i < text.length; i++) w += (text[i] === '.' ? ADV_DOT : ADV_DIGIT) * gh;
+    return w;
+  }
+
+  /* Draw `text` (digits and '.') right-aligned so it ends at xRight. Ported
+     from Stake-Out's ui-skin.js drawDigits, glyph metrics and all. */
+  function drawDigits(c, text, xRight, yTop, gh, row) {
+    if (!ready(atlas)) return;
+    var sy = (ATLAS_ROW[row] || 0) * CELL_H;
+    var cw = CELL_W * (gh / CELL_H);
+    var x = xRight;
+    for (var i = text.length - 1; i >= 0; i--) {
+      var ch = text[i];
+      var cell = glyphCell(ch);
+      if (isNaN(cell)) continue;
+      var adv = (ch === '.' ? ADV_DOT : ADV_DIGIT) * gh;
+      // the dot sits centred in its narrower advance; digits hug the right
+      var dx = ch === '.' ? x - adv / 2 - cw / 2 : x - cw + gh * 0.03;
+      c.drawImage(atlas, cell * CELL_W, sy, CELL_W, CELL_H, dx, yTop, cw, gh);
+      x -= adv;
+    }
+  }
+
+  /* ====================================================================== */
+  /* THE STAGE                                                              */
+  /* ====================================================================== */
+  var stage = $('stage');
+
+  function layoutStage() {
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var s = Math.min(vw / DESIGN_W, vh / DESIGN_H);
+    var ox = Math.round((vw - DESIGN_W * s) / 2);
+    var oy = Math.round((vh - DESIGN_H * s) / 2);
+    stage.style.transform = 'translate(' + ox + 'px,' + oy + 'px) scale(' + s + ')';
+    document.body.classList.toggle('is-portrait', vh > vw);
+  }
+  window.addEventListener('resize', layoutStage);
+  window.addEventListener('orientationchange', function () { setTimeout(layoutStage, 80); });
+
+  /* Build the decorative layers straight from the sprite table, so a layer can
+     never drift out of register by being typed in twice. */
+  function place(el, group, name) {
+    var s = SPRITES[group][name];
+    el.style.left = s.x + 'px';
+    el.style.top = s.y + 'px';
+    el.style.width = s.w + 'px';
+    el.style.height = s.h + 'px';
+    return el;
+  }
+
+  function addLayer(screen, group, name, z) {
+    var img = document.createElement('img');
+    img.className = 'ly';
+    img.alt = '';
+    img.style.zIndex = z;
+    place(img, group, name);
+    img.addEventListener('error', function () {
+      if (img.src.indexOf('.webp') >= 0) img.src = img.src.replace(/\.webp$/, '.png');
+    });
+    img.src = 'assets/img/' + group + '/' + name + '.webp';
+    screen.appendChild(img);
+    return img;
+  }
+
+  function artInto(btn, group, name, z) {
+    place(btn, group, name);
+    btn.style.zIndex = z;
+    var img = document.createElement('img');
+    img.alt = '';
+    img.addEventListener('error', function () {
+      if (img.src.indexOf('.webp') >= 0) img.src = img.src.replace(/\.webp$/, '.png');
+    });
+    img.src = 'assets/img/' + group + '/' + name + '.webp';
+    btn.insertBefore(img, btn.firstChild);
+    return btn;
+  }
+
+  /* ====================================================================== */
+  /* STATE                                                                  */
+  /* ====================================================================== */
   var levelIndex = 0;
   var setupNum = 1;
   var turns = [0, 0, 0];      // raw clockwise knob rotation, radians
@@ -514,7 +727,11 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
 
   var canvas = $('rig');
   var ctx = canvas.getContext('2d');
-  var scale = 1;
+  var rigScale = 1;
+
+  var fx = $('hudfx');
+  var fxCtx = fx.getContext('2d');
+  var fxScale = 1;
 
   var FINE_GEAR = 0.2;        // hold Shift while dragging for 5x finer control
 
@@ -530,19 +747,36 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
   }
 
   /* ---- menu ------------------------------------------------------------- */
+  /* One art plate per tier, in the package's own order, which is already the
+     tier order. The plate carries the label, so the only thing the button adds
+     is the accessible name and the selected state. */
+  var TIER_ART = [
+    'startmenu_05_apprentice_button',
+    'startmenu_06_journeyman_button',
+    'startmenu_07_foreman_button',
+    'startmenu_08_shop_rocket_button'
+  ];
+
   function buildMenu() {
+    var menu = $('screen-menu');
+    addLayer(menu, 'startmenu', 'startmenu_01_background', 1);
+    addLayer(menu, 'startmenu', 'startmenu_02_tribrach', 2);
+    addLayer(menu, 'startmenu', 'startmenu_03_title_branding', 3);
+
+    artInto($('tstBtn'), 'startmenu', 'startmenu_04_tst_return_button', 4);
+
     var list = $('lvlList');
     list.innerHTML = '';
     SIM.LEVELS.forEach(function (lvl, i) {
       var b = document.createElement('button');
-      b.className = 'lvl';
+      b.className = 'artbtn lvl';
       b.type = 'button';
       b.setAttribute('role', 'radio');
       b.setAttribute('aria-checked', String(i === levelIndex));
-      b.innerHTML =
-        '<div class="name">' + lvl.name + '</div>' +
-        '<div class="meta">' + lvl.setups + ' SETUPS &nbsp;·&nbsp; TOL ' +
-        lvl.bubbleTolerancePct + '% &nbsp;·&nbsp; HOLD ' + lvl.dwellSec + 's</div>';
+      b.setAttribute('aria-label',
+        lvl.name + ' — ' + lvl.setups + ' setups, tolerance ' +
+        lvl.bubbleTolerancePct + ' percent, hold ' + lvl.dwellSec + ' seconds');
+      artInto(b, 'startmenu', TIER_ART[i], 5 + i);
       b.addEventListener('click', function () {
         levelIndex = i;
         Array.prototype.forEach.call(list.children, function (c, j) {
@@ -550,6 +784,36 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
         });
       });
       list.appendChild(b);
+    });
+
+    artInto($('startBtn'), 'startmenu', 'startmenu_09_start_button', 9);
+    addLayer(menu, 'startmenu', 'startmenu_10_static_copy', 10);
+  }
+
+  /* ---- play ------------------------------------------------------------- */
+  function buildPlay() {
+    var play = $('screen-play');
+    addLayer(play, 'hud', 'tribrach_01_static_ui', 1);
+
+    canvas.style.left = RIG.x + 'px';
+    canvas.style.top = RIG.y + 'px';
+    canvas.style.width = RIG.side + 'px';
+    canvas.style.height = RIG.side + 'px';
+    canvas.style.zIndex = 2;
+
+    fx.style.left = '0px';
+    fx.style.top = '0px';
+    fx.style.width = DESIGN_W + 'px';
+    fx.style.height = DESIGN_H + 'px';
+    fx.style.zIndex = 3;
+
+    addLayer(play, 'hud', 'tribrach_08_ui_text', 4);
+    addLayer(play, 'hud', 'tribrach_09_branding', 5);
+    artInto($('quitBtn'), 'hud', 'tribrach_10_escape_button', 6);
+
+    // the overlay readouts and LOG AS-IS sit above the art
+    ['hudLevel', 'hudSetup', 'hudTol', 'logBtn'].forEach(function (id) {
+      $(id).style.zIndex = 7;
     });
   }
 
@@ -629,16 +893,16 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
     var rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return null;   // no layout box yet
     return {
-      x: (e.clientX - rect.left) / rect.width * 1000,
-      y: (e.clientY - rect.top) / rect.height * 1000
+      x: (e.clientX - rect.left) / rect.width * RIG.side,
+      y: (e.clientY - rect.top) / rect.height * RIG.side
     };
   }
 
   function knobAt(p) {
-    var best = null, bestD = HIT_R;
+    var best = null, bestD = Infinity;
     for (var i = 0; i < KNOBS.length; i++) {
       var d = Math.hypot(p.x - KNOBS[i].x, p.y - KNOBS[i].y);
-      if (d < bestD) { bestD = d; best = i; }
+      if (d < KNOBS[i].hit && d < bestD) { bestD = d; best = i; }
     }
     return best;
   }
@@ -723,15 +987,15 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
     rafId = requestAnimationFrame(loop);
   }
 
-  /* Pausing has to move the clock forward with it, or a player who takes a
-     phone call comes back to a stopwatch that says they spent four minutes on
-     one setup. Both the level clock and the per-setup clock get shifted by
-     however long we were away. */
   /* While paused, "now" stops advancing. Without this the sim freezes but the
      readout keeps counting up, and the clock only snaps back on resume — which
      looks exactly like a bug to the player watching it. */
   function nowMs() { return paused ? pausedAt : Date.now(); }
 
+  /* Pausing has to move the clock forward with it, or a player who takes a
+     phone call comes back to a stopwatch that says they spent four minutes on
+     one setup. Both the level clock and the per-setup clock get shifted by
+     however long we were away. */
   function setPaused(p) {
     p = !!p;
     if (p === paused) return;
@@ -754,6 +1018,16 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
   /* ====================================================================== */
   /* HUD                                                                    */
   /* ====================================================================== */
+  /* The art's TIME readout is three two-digit groups, so the clock reads
+     HH:MM:SS. Only the formatting changed; the value is the same elapsed
+     milliseconds it always was. The field report still uses tenths. */
+  function fmtHMS(sec) {
+    var s = Math.max(0, Math.floor(sec));
+    var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), ss = s % 60;
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return p(h) + ':' + p(m) + ':' + p(ss);
+  }
+
   function fmtClock(sec) {
     var m = Math.floor(sec / 60), s = sec - m * 60;
     return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s.toFixed(1);
@@ -763,42 +1037,94 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
     if (!$('screen-play').classList.contains('is-on')) return;
     var lvl = SIM.LEVELS[levelIndex];
     var el = (nowMs() - levelStartMs) / 1000;
-    var clock = $('hudClock');
-    clock.textContent = fmtClock(el);
-    clock.classList.toggle('is-warn', el > lvl.setups * 25);
-
     var off = SIM.offsetPct(bubble);
-    var inTol = off <= lvl.bubbleTolerancePct;
-    $('rdOffset').textContent = off.toFixed(1) + '%';
-    $('boxOffset').classList.toggle('ok', inTol);
-    $('rdHold').textContent = holdSec.toFixed(1) + 's / ' + lvl.dwellSec + 's';
-    $('boxHold').classList.toggle('ok', holdSec > 0);
-    paintScrews();
+
+    /* The DOM mirrors are the accessible truth and what the tests read; the
+       canvas glyphs below are the same numbers dressed up. */
+    $('hudClock').textContent = fmtHMS(el);
+    $('rdOffset').textContent = off.toFixed(1) + '% from centre';
+    $('rdHold').textContent = holdSec.toFixed(1) + 's of ' + lvl.dwellSec + 's held';
+
+    paintFx(el, off, lvl);
   }
 
-  var screwCells = null;
-  function buildScrews() {
-    var host = $('screws');
-    host.innerHTML = '';
-    screwCells = KNOBS.map(function (k) {
-      var d = document.createElement('div');
-      d.className = 's';
-      d.innerHTML = '<div class="id">SCREW ' + k.id + '</div><div class="t">+0.00</div>';
-      host.appendChild(d);
-      return d;
-    });
-  }
-
-  function paintScrews() {
-    if (!screwCells) return;
-    for (var i = 0; i < 3; i++) {
-      var t = turns[i] / (Math.PI * 2);
-      var atStop = Math.abs(turns[i]) >= SIM.MAX_TRAVEL_RAD - 1e-6;
-      screwCells[i].lastChild.textContent =
-        (t >= 0 ? '+' : '\u2212') + Math.abs(t).toFixed(2) + (atStop ? ' STOP' : '');
-      screwCells[i].classList.toggle('live', activeKnob === i);
-      screwCells[i].classList.toggle('stop', atStop);
+  /* ---- the live HUD layers (06 LCD + 07 hold fill) ---------------------- */
+  function paintFx(elapsedSec, off, lvl) {
+    var rect = fx.getBoundingClientRect();
+    if (!rect.width) return;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    var w = Math.max(1, Math.round(rect.width * dpr));
+    if (fx.width !== w) {
+      fx.width = w;
+      fx.height = Math.round(w * DESIGN_H / DESIGN_W);
+      fxScale = w / DESIGN_W;
     }
+    var c = fxCtx;
+    c.setTransform(fxScale, 0, 0, fxScale, 0, 0);
+    c.clearRect(0, 0, DESIGN_W, DESIGN_H);
+
+    /* TIME — three groups, right-aligned inside their own slot so the digits
+       sit where the baked art had them. */
+    var hms = fmtHMS(elapsedSec).split(':');
+    for (var g = 0; g < 3; g++) {
+      drawDigits(c, hms[g], LCD.time.groups[g] + LCD.time.gw, LCD.time.y, LCD.time.gh, 'green');
+    }
+    c.fillStyle = LCD_GREEN;
+    LCD.time.colons.forEach(function (p) {
+      c.fillRect(p[0], p[1], LCD.time.dot[0], LCD.time.dot[1]);
+    });
+
+    /* BUBBLE OFFSET — value in the digit atlas, '%' as the sprite cut out of
+       the art so the sign matches the rest of the panel exactly. */
+    var txt = off.toFixed(1);
+    drawDigits(c, txt, LCD.offset.right, LCD.offset.y, LCD.offset.gh, 'green');
+    var pO = sprite('hud', 'pct_offset');
+    if (ready(pO)) c.drawImage(pO, LCD.offset.pct.x, LCD.offset.pct.y, LCD.offset.pct.w, LCD.offset.pct.h);
+
+    /* HOLD TO COMPLETE — the segmented ring, then the percentage in the middle.
+       The grey track is already in layer 01, so only the lit part is drawn. */
+    var frac = Math.max(0, Math.min(1, holdSec / lvl.dwellSec));
+    drawHoldRing(c, frac);
+
+    var pctNum = Math.round(frac * 100);
+    var pH = LCD.hold.pct;
+    var numW = textWidth(String(pctNum), LCD.hold.gh);
+    var groupW = numW + pH.w;
+    var x0 = LCD.hold.cx - groupW / 2;
+    drawDigits(c, String(pctNum), x0 + numW, LCD.hold.y, LCD.hold.gh, 'green');
+    var pHimg = sprite('hud', 'pct_hold');
+    if (ready(pHimg)) c.drawImage(pHimg, x0 + numW + 4, pH.y, pH.w, pH.h);
+  }
+
+  /* The lit arc. Segmented like the track underneath it, starting at twelve
+     o'clock and filling clockwise — the same direction and origin the old
+     procedural ring used, so the motion reads identically. */
+  function drawHoldRing(c, frac) {
+    if (frac <= 0) return;
+    var total = RING.segs;
+    var lit = frac * total;
+    var pitch = 360 / total;
+    var gap = RING.gapDeg;
+    var mid = (RING.rIn + RING.rOut) / 2;
+
+    c.save();
+    c.lineWidth = RING.rOut - RING.rIn;
+    c.lineCap = 'butt';
+    c.shadowColor = 'rgba(150,250,40,0.55)';
+    c.shadowBlur = 14;
+    for (var i = 0; i < total; i++) {
+      var amount = Math.max(0, Math.min(1, lit - i));
+      if (amount <= 0) break;
+      var a0 = -90 + i * pitch + gap / 2;
+      var a1 = a0 + (pitch - gap) * amount;
+      c.strokeStyle = 'rgb(' + Math.round(146 + 22 * amount) + ',' +
+                      Math.round(249 + 5 * amount) + ',' +
+                      Math.round(24 + 18 * amount) + ')';
+      c.beginPath();
+      c.arc(RING.x, RING.y, mid, a0 * Math.PI / 180, a1 * Math.PI / 180);
+      c.stroke();
+    }
+    c.restore();
   }
 
   var toastTimer = null;
@@ -811,378 +1137,131 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
   }
 
   /* ====================================================================== */
-  /* RENDER                                                                 */
+  /* RENDER — the rig                                                       */
   /* ====================================================================== */
-  /* The plate never changes — not its shape, its shading, its bolts or its
-     engraving. Redrawing it every frame meant re-running a 20px blur over a
-     full-size path sixty times a second, which is exactly the sort of thing
-     that turns a phone into a hand warmer. Render it once per resize into an
-     offscreen canvas and blit it instead; only the vial, the bubble and the
-     knobs actually move. */
-  var bodyLayer = null;
-
-  function bodyLayerFor() {
-    if (bodyLayer && bodyLayer.width === canvas.width) return bodyLayer;
-    var off = document.createElement('canvas');
-    off.width = canvas.width;
-    off.height = canvas.height;
-    var octx = off.getContext('2d');
-    octx.setTransform(scale, 0, 0, scale, 0, 0);
-    octx.textBaseline = 'alphabetic';
-    drawBody(octx);
-    bodyLayer = off;
-    return off;
-  }
-
   function resize() {
     var rect = canvas.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
     var dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-    var w = Math.round(rect.width * dpr);
+    var w = Math.max(1, Math.round(rect.width * dpr));
     if (canvas.width === w) return;
     canvas.width = w;
     canvas.height = w;
-    scale = w / 1000;
-    bodyLayer = null;        // cached body is now the wrong resolution
+    rigScale = w / RIG.side;
   }
   window.addEventListener('resize', resize);
-  window.addEventListener('orientationchange', function () { setTimeout(resize, 80); });
-
-  /* Paints the plate silhouette with one style. `grow` fattens every piece by
-     the same amount, which is how the dark outline is done: paint it once
-     oversized in the edge colour, then once at true size in the gradient. No
-     path arithmetic, no union algorithm, and the seams never show because a
-     canvas gradient is defined in user space — every piece samples the same
-     one. */
-  function paintBody(c, style, grow) {
-    c.save();
-    c.fillStyle = style;
-    c.strokeStyle = style;
-    c.lineJoin = 'round';
-    c.lineCap = 'round';
-
-    // arms, as fat round-capped strokes from the hub out to each screw
-    c.lineWidth = ARM_W + grow * 2;
-    KNOBS.forEach(function (k) {
-      c.beginPath();
-      c.moveTo(BODY.x, BODY.y);
-      c.lineTo(k.x, k.y);
-      c.stroke();
-    });
-
-    // hub
-    c.beginPath();
-    c.arc(BODY.x, BODY.y, HUB_R + grow, 0, Math.PI * 2);
-    c.fill();
-
-    // lobe around each screw
-    KNOBS.forEach(function (k) {
-      c.beginPath();
-      c.arc(k.x, k.y, LOBE_R + grow, 0, Math.PI * 2);
-      c.fill();
-    });
-    c.restore();
-  }
-
-  function drawBody(c) {
-    // cast shadow
-    c.save();
-    c.globalAlpha = 0.5;
-    c.filter = 'blur(20px)';
-    c.translate(0, 24);
-    paintBody(c, '#000', 6);
-    c.restore();
-
-    // black understructure peeking out under each lobe (the clamp feet)
-    c.save();
-    c.fillStyle = '#131316';
-    KNOBS.forEach(function (k) {
-      c.beginPath();
-      c.ellipse(k.x, k.y + 58, LOBE_R * 0.74, 46, 0, 0, Math.PI * 2);
-      c.fill();
-    });
-    c.restore();
-
-    // dark edge, then the plate itself
-    paintBody(c, '#6e5406', 5);
-
-    var g = c.createLinearGradient(0, 140, 0, 960);
-    g.addColorStop(0,    '#ffdc55');
-    g.addColorStop(0.40, '#f5c218');
-    g.addColorStop(0.76, '#d19f0e');
-    g.addColorStop(1,    '#a8820c');
-    paintBody(c, g, 0);
-
-    // inner bevel: a faint light line tracking just inside the silhouette
-    c.save();
-    c.globalAlpha = 0.20;
-    c.globalCompositeOperation = 'source-atop';
-    c.lineWidth = 4;
-    c.strokeStyle = '#ffffff';
-    c.lineJoin = 'round'; c.lineCap = 'round';
-    c.lineWidth = 4;
-    c.beginPath(); c.arc(BODY.x, BODY.y, HUB_R - 13, 0, Math.PI * 2); c.stroke();
-    KNOBS.forEach(function (k) {
-      c.beginPath(); c.arc(k.x, k.y, LOBE_R - 13, 0, Math.PI * 2); c.stroke();
-    });
-    c.restore();
-
-    // decorative silver hex bolts — non-functional, straight off the reference
-    KNOBS.forEach(function (k) {
-      // two per lobe, flanking the screw
-      var a = Math.atan2(k.y - BODY.y, k.x - BODY.x);
-      [-1, 1].forEach(function (sgn) {
-        var t = a + sgn * 1.55;
-        drawBolt(c, k.x + Math.cos(t) * (LOBE_R - 26), k.y + Math.sin(t) * (LOBE_R - 26), 15);
-      });
-    });
-
-    // engraved brand text, low on the hub either side of the badge
-    c.save();
-    c.fillStyle = 'rgba(0,0,0,0.55)';
-    c.font = 'bold 18px "Courier New", monospace';
-    c.textAlign = 'center';
-    /* The lower shoulders of the hub are the only genuinely clear real estate:
-       below the vial bezel, inside the hub rim, and outboard of the arm down to
-       screw C. Everything above here is either glass or arm. */
-    ['TOTAL', 'STATION', 'TECH'].forEach(function (t, i) { c.fillText(t, 336, 600 + i * 20); });
-    ['MEASURE', 'LAYOUT', 'BUILD'].forEach(function (t, i) { c.fillText(t, 664, 600 + i * 20); });
-    c.restore();
-
-    // TST hex badge + moulded arrows, bottom centre — decorative
-    drawBadge(c, 500, 655, 27);
-    c.save();
-    c.fillStyle = 'rgba(0,0,0,0.42)';
-    [-1, 1].forEach(function (sgn) {
-      c.save();
-      c.translate(500 + sgn * 74, 655);
-      c.scale(sgn, 1);
-      c.beginPath();
-      c.moveTo(-11, -16); c.lineTo(4, -16); c.lineTo(13, 0);
-      c.lineTo(4, 16); c.lineTo(-11, 16); c.lineTo(-2, 0);
-      c.closePath(); c.fill();
-      c.restore();
-    });
-    c.restore();
-  }
-
-  function drawBolt(c, x, y, r) {
-    var g = c.createRadialGradient(x - r * 0.4, y - r * 0.4, r * 0.1, x, y, r);
-    g.addColorStop(0, '#b9bcc2'); g.addColorStop(0.6, '#6f747c'); g.addColorStop(1, '#3a3e45');
-    c.fillStyle = g;
-    c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 2; c.stroke();
-    // hex socket
-    c.fillStyle = '#1b1d21';
-    c.beginPath();
-    for (var i = 0; i < 6; i++) {
-      var a = i * Math.PI / 3 + 0.35;
-      var px = x + Math.cos(a) * r * 0.46, py = y + Math.sin(a) * r * 0.46;
-      if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
-    }
-    c.closePath(); c.fill();
-  }
-
-  function drawBadge(c, x, y, r) {
-    c.save();
-    c.beginPath();
-    for (var i = 0; i < 6; i++) {
-      var a = i * Math.PI / 3 - Math.PI / 2;
-      var px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
-      if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
-    }
-    c.closePath();
-    c.fillStyle = '#17171b'; c.fill();
-    c.strokeStyle = 'rgba(0,0,0,0.6)'; c.lineWidth = 3; c.stroke();
-    c.fillStyle = '#f5c218';
-    c.font = 'bold 22px "Courier New", monospace';
-    c.textAlign = 'center'; c.textBaseline = 'middle';
-    c.fillText('TST', x, y + 1);
-    c.restore();
-  }
-
-  /* ---- the vial --------------------------------------------------------- */
-  /* Visual language deliberately matched to Stake-Out's bubble gauge: machined
-     bezel, silver retaining ring, green glass, white crosshair, dashed yellow
-     tolerance ring, yellow cardinal index bars. Same instrument, new rig. */
-  function drawVial(c) {
-    var lvl = SIM.LEVELS[levelIndex];
-    var cx = VIAL.x, cy = VIAL.y, r = VIAL.r;
-    var inTol = SIM.offsetPct(bubble) <= lvl.bubbleTolerancePct;
-
-    // machined bezel
-    var bez = c.createLinearGradient(cx, cy - r - 24, cx, cy + r + 24);
-    bez.addColorStop(0, '#54545c'); bez.addColorStop(0.5, '#17171a'); bez.addColorStop(1, '#43434a');
-    c.fillStyle = bez;
-    c.beginPath(); c.arc(cx, cy, r + 24, 0, Math.PI * 2); c.fill();
-
-    // hold-progress ring: sweeps closed while the bubble stays inside tolerance
-    if (holdSec > 0) {
-      c.save();
-      c.strokeStyle = '#22d422';
-      c.lineWidth = 9;
-      c.lineCap = 'round';
-      c.beginPath();
-      c.arc(cx, cy, r + 19, -Math.PI / 2,
-            -Math.PI / 2 + Math.PI * 2 * Math.min(1, holdSec / lvl.dwellSec));
-      c.stroke();
-      c.restore();
-    }
-
-    // silver retaining ring
-    c.strokeStyle = '#d0d0d4'; c.lineWidth = 8;
-    c.beginPath(); c.arc(cx, cy, r + 9, 0, Math.PI * 2); c.stroke();
-
-    // the glass
-    var vial = c.createRadialGradient(cx, cy - r * 0.2, r * 0.05, cx, cy, r);
-    vial.addColorStop(0, '#54c43a'); vial.addColorStop(0.55, '#3fbf22');
-    vial.addColorStop(0.86, '#2fd42f'); vial.addColorStop(1, '#0d6b0d');
-    c.fillStyle = vial;
-    c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.fill();
-
-    // etched crosshair + the two concentric rings
-    c.strokeStyle = 'rgba(0,0,0,0.78)'; c.lineWidth = 3;
-    c.beginPath();
-    c.moveTo(cx - r * 0.96, cy); c.lineTo(cx + r * 0.96, cy);
-    c.moveTo(cx, cy - r * 0.96); c.lineTo(cx, cy + r * 0.96);
-    c.stroke();
-    [0.62, 0.36].forEach(function (f) {
-      c.beginPath(); c.arc(cx, cy, r * f, 0, Math.PI * 2); c.stroke();
-    });
-    // small bullseye at dead centre
-    c.beginPath(); c.arc(cx, cy, r * 0.13, 0, Math.PI * 2); c.stroke();
-
-    // dashed ring = THIS level's pass tolerance
-    c.save();
-    c.setLineDash([9, 9]);
-    c.strokeStyle = inTol ? '#ffffff' : '#f5c218';
-    c.lineWidth = 3;
-    c.beginPath(); c.arc(cx, cy, r * (lvl.bubbleTolerancePct / 100), 0, Math.PI * 2); c.stroke();
-    c.restore();
-
-    // yellow index bars at the cardinals
-    c.fillStyle = '#f5c218';
-    var bw = 14, bl = 30;
-    c.fillRect(cx - bw / 2, cy - r - bl / 2, bw, bl);
-    c.fillRect(cx - bw / 2, cy + r - bl / 2, bw, bl);
-    c.fillRect(cx - r - bl / 2, cy - bw / 2, bl, bw);
-    c.fillRect(cx + r - bl / 2, cy - bw / 2, bl, bw);
-
-    // THE BUBBLE. Physics is +y up, canvas is +y down — hence the minus.
-    var bx = cx + bubble.x * r;
-    var by = cy - bubble.y * r;
-    var br = r * 0.23;
-    var bg = c.createRadialGradient(bx - br * 0.3, by - br * 0.35, br * 0.05, bx, by, br);
-    bg.addColorStop(0, '#f2ffe0'); bg.addColorStop(0.38, '#a8f56a'); bg.addColorStop(1, '#3fc41a');
-    c.fillStyle = bg;
-    c.beginPath(); c.arc(bx, by, br, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = 'rgba(255,255,255,0.6)'; c.lineWidth = 3; c.stroke();
-    c.fillStyle = 'rgba(255,255,255,0.9)';
-    c.beginPath(); c.ellipse(bx - br * 0.3, by - br * 0.38, br * 0.26, br * 0.17, -0.6, 0, Math.PI * 2); c.fill();
-
-    // glass sheen
-    c.save();
-    c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.clip();
-    var sheen = c.createLinearGradient(cx, cy - r, cx, cy + r * 0.2);
-    sheen.addColorStop(0, 'rgba(255,255,255,0.30)'); sheen.addColorStop(1, 'rgba(255,255,255,0)');
-    c.fillStyle = sheen; c.fillRect(cx - r, cy - r, r * 2, r * 1.2);
-    c.restore();
-  }
-
-  /* ---- the knobs -------------------------------------------------------- */
-  function drawKnob(c, k) {
-    var rot = turns[k.i];                  // raw clockwise drag = what you see
-    var live = (activeKnob === k.i);
-    var atStop = Math.abs(rot) >= SIM.MAX_TRAVEL_RAD - 1e-6;
-    var x = k.x, y = k.y, R = KNOB_R;
-
-    c.save();
-
-    // spindle + shadow under the knob
-    c.fillStyle = 'rgba(0,0,0,0.45)';
-    c.beginPath(); c.ellipse(x, y + R * 0.72, R * 0.95, R * 0.34, 0, 0, Math.PI * 2); c.fill();
-
-    // silver collar the knob rides on
-    var col = c.createLinearGradient(x - R, y, x + R, y);
-    col.addColorStop(0, '#4d5158'); col.addColorStop(0.35, '#b6bac1');
-    col.addColorStop(0.65, '#8d9199'); col.addColorStop(1, '#40444a');
-    c.fillStyle = col;
-    c.beginPath(); c.ellipse(x, y + R * 0.46, R * 0.74, R * 0.30, 0, 0, Math.PI * 2); c.fill();
-
-    // knurled barrel
-    c.save();
-    c.translate(x, y);
-    c.rotate(rot);                          // canvas rotate is clockwise = +q
-    var TEETH = 44;
-    for (var i = 0; i < TEETH; i++) {
-      var a0 = (i / TEETH) * Math.PI * 2;
-      var a1 = ((i + 0.5) / TEETH) * Math.PI * 2;
-      c.beginPath();
-      c.moveTo(0, 0);
-      c.arc(0, 0, R, a0, a1);
-      c.closePath();
-      c.fillStyle = (i % 2) ? '#3c3c42' : '#232327';
-      c.fill();
-    }
-    c.restore();
-
-    // barrel shading over the knurl so it reads as a cylinder, not a pinwheel
-    c.save();
-    c.beginPath(); c.arc(x, y, R, 0, Math.PI * 2); c.clip();
-    var shade = c.createLinearGradient(x - R, y - R, x + R, y + R);
-    shade.addColorStop(0, 'rgba(255,255,255,0.30)');
-    shade.addColorStop(0.42, 'rgba(255,255,255,0.02)');
-    shade.addColorStop(1, 'rgba(0,0,0,0.55)');
-    c.fillStyle = shade; c.fillRect(x - R, y - R, R * 2, R * 2);
-    c.restore();
-
-    // rim
-    c.strokeStyle = live ? '#f5c218' : '#101013';
-    c.lineWidth = live ? 6 : 4;
-    c.beginPath(); c.arc(x, y, R, 0, Math.PI * 2); c.stroke();
-
-    // top cap
-    var capR = R * 0.60;
-    var cap = c.createRadialGradient(x - capR * 0.35, y - capR * 0.4, capR * 0.05, x, y, capR);
-    cap.addColorStop(0, '#6a6a72'); cap.addColorStop(0.55, '#3a3a41'); cap.addColorStop(1, '#1c1c20');
-    c.fillStyle = cap;
-    c.beginPath(); c.arc(x, y, capR, 0, Math.PI * 2); c.fill();
-    c.strokeStyle = atStop ? '#ff4b3e' : '#f5c218';
-    c.lineWidth = 4;
-    c.beginPath(); c.arc(x, y, capR * 0.92, 0, Math.PI * 2); c.stroke();
-
-    // index mark — the only way to see how far you have turned it
-    c.save();
-    c.translate(x, y);
-    c.rotate(rot);
-    c.fillStyle = atStop ? '#ff4b3e' : '#f5c218';
-    c.fillRect(-4, -R * 0.95, 8, R * 0.42);
-    c.restore();
-
-    c.restore();
-
-    /* The screw letter is engraved on the lobe, pushed OUTWARD from the hub so
-       it never lands on the arm, the vial or a bolt. The turn counter used to
-       sit here too and was unreadable dark-on-yellow behind the knob shadow —
-       it lives in the HUD now, where it can be read at a glance. */
-    var out = Math.atan2(y - BODY.y, x - BODY.x);
-    c.save();
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.fillStyle = live ? 'rgba(0,0,0,0.9)' : 'rgba(0,0,0,0.6)';
-    c.font = 'bold 32px "Courier New", monospace';
-    c.fillText(k.id, x + Math.cos(out) * (R + 32), y + Math.sin(out) * (R + 32));
-    c.restore();
-  }
 
   function draw() {
     resize();
-    ctx.setTransform(scale, 0, 0, scale, 0, 0);
-    ctx.clearRect(0, 0, 1000, 1000);
-    ctx.textBaseline = 'alphabetic';
-    ctx.drawImage(bodyLayerFor(), 0, 0, 1000, 1000);
-    drawVial(ctx);
+    ctx.setTransform(rigScale, 0, 0, rigScale, 0, 0);
+    ctx.clearRect(0, 0, RIG.side, RIG.side);
+
+    var body = sprite('hud', 'tribrach_02_static_body');
+    var bl = local(SPRITES.hud.tribrach_02_static_body);
+    if (ready(body)) ctx.drawImage(body, bl.x, bl.y, bl.w, bl.h);
+
+    var glass = sprite('hud', 'tribrach_03_level_glass');
+    if (ready(glass)) ctx.drawImage(glass, GLASS.x, GLASS.y, GLASS.w, GLASS.h);
+
+    drawToleranceRing(ctx);
+    drawBubble(ctx);
     KNOBS.forEach(function (k) { drawKnob(ctx, k); });
+  }
+
+  /* This level's pass ring. Not in the art package — the plates are one per
+     screen, not one per tier — but without it the player has no idea how close
+     "close enough" is, so it is drawn over the glass the way the old build
+     drew it: dashed, yellow until you are inside it, white once you are. */
+  function drawToleranceRing(c) {
+    var lvl = SIM.LEVELS[levelIndex];
+    var inTol = SIM.offsetPct(bubble) <= lvl.bubbleTolerancePct;
+    var f = lvl.bubbleTolerancePct / 100;
+
+    c.save();
+    c.setLineDash([9, 8]);
+    c.lineWidth = 3;
+    c.strokeStyle = inTol ? 'rgba(255,255,255,0.95)' : 'rgba(30,30,20,0.72)';
+    c.beginPath();
+    c.ellipse(VIAL.x, VIAL.y, Math.max(7, TRAVEL_X * f), Math.max(7, TRAVEL_Y * f), 0, 0, Math.PI * 2);
+    c.stroke();
+    c.restore();
+  }
+
+  /* THE BUBBLE. Physics is +y up, the canvas is +y down — hence the minus. */
+  function drawBubble(c) {
+    var img = sprite('hud', 'tribrach_05_bubble');
+    if (!ready(img)) return;
+    var s = SPRITES.hud.tribrach_05_bubble;
+    var bx = VIAL.x + bubble.x * TRAVEL_X;
+    var by = VIAL.y - bubble.y * TRAVEL_Y;
+    c.drawImage(img, bx - s.w / 2, by - s.h / 2, s.w, s.h);
+  }
+
+  /* Knobs turn by spinning their own bitmap, then clipping the result back to
+     the SILHOUETTE the art was drawn with. That second step is not cosmetic.
+
+     The two upper knobs are rendered in three-quarter view, so they are ovals,
+     not circles. Spin an oval bitmap and its outline wobbles — which looks
+     wrong on its own, and worse, uncovers the flattened background underneath
+     (the layer package was cut from a flattened master, so what sits behind a
+     knob is a smear of reconstructed pixels, not clean plate). Masking to the
+     unrotated alpha pins the outline exactly where the artwork put it while
+     the knurling underneath still visibly rotates.
+
+     One offscreen canvas per knob, made once and reused. */
+  var knobBuf = [];
+  function drawKnob(c, k) {
+    var img = sprite('hud', 'knob_' + k.id.toLowerCase());
+    var a = turns[k.i];
+
+    if (ready(img)) {
+      var buf = knobBuf[k.i];
+      if (!buf) {
+        buf = knobBuf[k.i] = document.createElement('canvas');
+        buf.width = k.art.w;
+        buf.height = k.art.h;
+      }
+      var b = buf.getContext('2d');
+      b.setTransform(1, 0, 0, 1, 0, 0);
+      b.clearRect(0, 0, buf.width, buf.height);
+
+      b.save();
+      b.translate(buf.width / 2, buf.height / 2);
+      b.rotate(a);
+      b.drawImage(img, -buf.width / 2, -buf.height / 2, buf.width, buf.height);
+      b.restore();
+
+      // keep only what falls inside the knob's own, unrotated outline
+      b.globalCompositeOperation = 'destination-in';
+      b.drawImage(img, 0, 0, buf.width, buf.height);
+      b.globalCompositeOperation = 'source-over';
+
+      c.drawImage(buf, k.art.x, k.art.y, k.art.w, k.art.h);
+    }
+
+    // index tick, riding the knurl at twelve o'clock when the screw is at zero
+    var tr = k.r * 0.74;
+    var tx = k.x + Math.sin(a) * tr;
+    var ty = k.y - Math.cos(a) * tr;
+    c.save();
+    c.fillStyle = activeKnob === k.i ? '#ffe680' : '#f5c218';
+    c.shadowColor = 'rgba(245,194,24,0.85)';
+    c.shadowBlur = activeKnob === k.i ? 16 : 8;
+    c.beginPath();
+    c.arc(tx, ty, k.r * 0.085, 0, Math.PI * 2);
+    c.fill();
+    c.restore();
+
+    // at the stops, say so rather than just going dead under the finger
+    if (Math.abs(a) >= SIM.MAX_TRAVEL_RAD - 1e-6) {
+      c.save();
+      c.strokeStyle = 'rgba(255,90,90,0.9)';
+      c.lineWidth = 4;
+      c.beginPath();
+      c.arc(k.x, k.y, k.r * 0.98, 0, Math.PI * 2);
+      c.stroke();
+      c.restore();
+    }
   }
 
   /* ====================================================================== */
@@ -1225,7 +1304,7 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
     armedLog = false;
     clearTimeout(armedTimer);
     $('logBtn').textContent = 'LOG AS-IS';
-    $('logBtn').classList.add('danger');
+    $('logBtn').classList.remove('armed');
   }
 
   /* Two-press, because one stray thumb should not throw away a setup you have
@@ -1236,12 +1315,17 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
     if (!armedLog) {
       armedLog = true;
       $('logBtn').textContent = 'CONFIRM — LOG UNLEVEL';
+      $('logBtn').classList.add('armed');
       armedTimer = setTimeout(disarmLog, 3000);
       return;
     }
     finishSetup(false, 'LOGGED UNLEVEL');
   });
 
+  /* ESCAPE TO MAIN MENU — the art package's new button, wired to the flow that
+     already existed for leaving a level. Walk away with nothing logged and you
+     land back on the menu; walk away part-way through and you still get the
+     field report for the setups you did finish, which is what it always did. */
   $('quitBtn').addEventListener('click', function () {
     running = false;
     disarmLog();
@@ -1256,7 +1340,8 @@ h1 .thin{color:var(--text-dim);font-weight:normal}
   /* BOOT                                                                   */
   /* ====================================================================== */
   buildMenu();
-  buildScrews();
+  buildPlay();
+  layoutStage();
   show('menu');
 
   /* A read-only window into live state, for console poking and for the

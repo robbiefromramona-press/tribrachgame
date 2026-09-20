@@ -10,3 +10,11 @@ desktop.ini
 .vscode/
 .idea/
 *.log
+
+# Local preview config, not part of the game
+.claude/
+
+# Art masters: 61MB of full-canvas RGBA layers. They live in the shared
+# Drive folder (Claude/webapps/tribrach game/updated UI/) and are only needed
+# to re-run tools/prep_layers.js. The cropped sprites it emits DO ship.
+_design-assets/
