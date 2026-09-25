@@ -213,6 +213,23 @@ body.is-portrait.is-playing #rotate{display:flex}
   opacity:0;transition:opacity .18s ease;pointer-events:none;z-index:60;white-space:nowrap;
 }
 .toast.is-on{opacity:1}
+
+/* Legal links. Deliberately outside #stage: the menu is a measured sprite
+   canvas that gets scaled by a transform, and anything added inside it would
+   have to be placed in both the landscape and portrait layout tables. This is
+   plain viewport-fixed chrome instead, shown only on the menu. */
+#legalBar{
+  display:none;
+  position:fixed;left:0;right:0;bottom:0;z-index:40;
+  padding:6px 12px calc(6px + env(safe-area-inset-bottom));
+  text-align:center;font-size:11px;letter-spacing:.4px;
+  color:rgba(255,255,255,.42);
+  background:linear-gradient(to top, rgba(5,6,10,.85), rgba(5,6,10,0));
+  pointer-events:none;
+}
+body.is-menu #legalBar{display:block}
+#legalBar a{color:rgba(255,255,255,.62);text-decoration:none;pointer-events:auto}
+#legalBar a:hover,#legalBar a:focus-visible{color:var(--yellow)}
 .toast.ok{border-color:#2f8f3f;color:#7dffa0}
 .toast.no{border-color:#8f2f2f;color:#ff9a9a}
 
@@ -279,6 +296,14 @@ body.is-portrait.is-playing #rotate{display:flex}
 </section>
 
 <div id="rotate"><span>TURN YOUR PHONE SIDEWAYS FOR A BIGGER RIG</span></div>
+
+<!-- Legal links for the training simulator. No consent gate: nothing is
+     uploaded and nothing here feeds field layout. -->
+<div id="legalBar">
+  <a href="https://totalstationtech.com/terms.html" target="_blank" rel="noopener">Terms</a> &middot;
+  <a href="https://totalstationtech.com/privacy.html" target="_blank" rel="noopener">Privacy</a> &middot;
+  <a href="https://totalstationtech.com/disclaimer.html" target="_blank" rel="noopener">Disclaimer</a>
+</div>
 <div class="toast" id="toast"></div>
 
 <script id="tribrach-sim">
@@ -867,6 +892,7 @@ body.is-portrait.is-playing #rotate{display:flex}
       $('screen-' + s).classList.toggle('is-on', s === name);
     });
     document.body.classList.toggle('is-playing', name === 'play');
+    document.body.classList.toggle('is-menu', name === 'menu');
     /* The menu and the play screen sit on different design canvases in
        portrait, so the stage has to be re-measured on every screen change and
        not only when the window moves. */
