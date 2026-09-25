@@ -1,11 +1,45 @@
-# Tribrach has no build step — it's a single static index.html served from the
-# repo root. Declaring that here means a Git-linked deploy needs no settings in
-# the Netlify UI, and nothing tries to detect a framework that isn't there.
+# Tribrach is a single static index.html served from the repo root. Declaring
+# that here means a Git-linked deploy needs no settings in the Netlify UI, and
+# nothing tries to detect a framework that isn't there.
+#
+# The build command minifies that one file -- the inline CSS and both inline
+# script blocks -- in Netlify's own checkout on the way to publishing. Your
+# source file is never touched by it.
+#
+# Why bother: the physics core and its tuning table are commented in detail,
+# and those comments are the expensive part. Minifying strips them and renames
+# the internals. It does NOT make the game secret -- anything the browser runs
+# can be read. It just makes a copy cost real work.
+#
+# The <script id="tribrach-sim"> and id="tribrach-app" attributes survive
+# minification, which matters: tests/extract-sim.js finds the physics block by
+# that id. Verified: the full Playwright suite passes (43/43) against the
+# minified file.
 
 [build]
   publish = "."
+  command = "npx --yes html-minifier-terser@7.2.0 --minify-js --minify-css --remove-comments -o index.min.html index.html && mv index.min.html index.html"
+
+# This repo has a package.json, but only for the Playwright test harness --
+# nothing in it ships. Now that a build command exists, Netlify would otherwise
+# install those devDependencies on every deploy and Playwright would try to
+# download a browser: minutes of build time and a new way for a deploy to fail,
+# for something the site does not use. These two keep that out of the build.
+[build.environment]
+  NPM_FLAGS = "--omit=dev"
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1"
 
 # The port used by `python -m http.server` locally, for `netlify dev`.
 [dev]
   framework = "#static"
   publish = "."
+
+# ---- Password protection (free alternative to Netlify's Pro-only feature) ----
+# Runs on every request, before anything is served. The password itself is NOT
+# here: set BASIC_AUTH_CREDENTIALS in the Netlify dashboard for this site
+# (Site configuration > Environment variables), format  username:password
+# -- space-separated for several. With that variable unset this does nothing
+# and the site stays public. See netlify/edge-functions/basic-auth.ts.
+[[edge_functions]]
+  path = "/*"
+  function = "basic-auth"
