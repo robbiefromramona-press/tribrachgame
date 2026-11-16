@@ -18,3 +18,9 @@ desktop.ini
 # Drive folder (Claude/webapps/tribrach game/updated UI/) and are only needed
 # to re-run tools/prep_layers.js. The cropped sprites it emits DO ship.
 _design-assets/
+
+# Local secrets and private notes: never commit
+.env
+.env.*
+!.env.example
+_private/
