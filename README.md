@@ -1,5 +1,7 @@
 # Tribrach Leveling Simulator
 
+**Live:** https://tribrachgame.netlify.app · Built with Claude by robbiefromramona-press · MIT licensed.
+
 A browser mini-game where you level a bullseye bubble by turning the three
 leveling screws on a tribrach — the mount a total station or prism pole sits on.
 
@@ -292,3 +294,7 @@ nothing configured in the Netlify UI — it just copies the repo root and serves
 
 To deploy: Netlify -> Add new site -> Import an existing project -> pick this
 repo -> accept the detected settings. Every push to `main` redeploys.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
